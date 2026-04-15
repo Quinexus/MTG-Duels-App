@@ -8,12 +8,12 @@ export default defineConfig({
       "/api/archidekt": {
         target: "https://archidekt.com",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/archidekt/, "/api"),
+        rewrite: (path) => ensureTrailingSlash(path.replace(/^\/api\/archidekt/, "/api")),
       },
       "/archidekt-api": {
         target: "https://archidekt.com",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/archidekt-api/, "/api"),
+        rewrite: (path) => ensureTrailingSlash(path.replace(/^\/archidekt-api/, "/api")),
       },
       "/moxfield-api": {
         target: "https://api2.moxfield.com",
@@ -23,3 +23,9 @@ export default defineConfig({
     },
   },
 });
+
+function ensureTrailingSlash(path: string) {
+  const [pathname, query = ""] = path.split("?");
+  const normalized = pathname.endsWith("/") ? pathname : `${pathname}/`;
+  return query ? `${normalized}?${query}` : normalized;
+}
