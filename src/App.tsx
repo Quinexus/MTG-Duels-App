@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type DragEvent,
   type MouseEvent,
+  type TouchEvent,
 } from "react";
 import {
   buildInstances,
@@ -925,6 +926,11 @@ function App() {
   }
 
   function openLeftTool(tool: LeftTool) {
+    if (isCompactViewport() && leftPanelOpen && leftTool === tool) {
+      setLeftPanelOpen(false);
+      return;
+    }
+
     setLeftTool(tool);
     setLeftPanelOpen(true);
     if (isCompactViewport()) {
@@ -933,6 +939,11 @@ function App() {
   }
 
   function openRightTool(tool: RightTool) {
+    if (isCompactViewport() && rightPanelOpen && rightTool === tool) {
+      setRightPanelOpen(false);
+      return;
+    }
+
     setRightTool(tool);
     setRightPanelOpen(true);
     if (isCompactViewport()) {
@@ -2193,6 +2204,23 @@ function CardTile({
 }) {
   const imageUrl = card.faceDown ? undefined : data?.imageUrl;
   const counters = visibleCounters(card.counters);
+  const lastTouchTapRef = useRef(0);
+
+  function onTouchEnd(event: TouchEvent<HTMLButtonElement>) {
+    if (!onDoubleClick) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastTouchTapRef.current < 320) {
+      event.preventDefault();
+      onDoubleClick();
+      lastTouchTapRef.current = 0;
+      return;
+    }
+
+    lastTouchTapRef.current = now;
+  }
 
   return (
     <button
@@ -2201,11 +2229,12 @@ function CardTile({
       } ${compact ? "is-compact" : ""}`}
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
-      draggable
+      draggable={!isCompactViewport()}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onMouseMove={onHover}
       onMouseLeave={onLeave}
+      onTouchEnd={onTouchEnd}
       style={{ "--card-scale": cardScale } as CSSProperties}
       title={data?.name ?? card.name}
     >
