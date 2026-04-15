@@ -5,8 +5,7 @@ export default async function handler(request, response) {
     return;
   }
 
-  const rawPath = request.query.path;
-  const pathParts = Array.isArray(rawPath) ? rawPath : [rawPath].filter(Boolean);
+  const pathParts = normalizePathParts(request.query.path);
   const safePath = pathParts.map((part) => encodeURIComponent(part)).join("/");
   const upstreamUrl = new URL(`https://archidekt.com/api/${safePath}/`);
 
@@ -36,6 +35,7 @@ export default async function handler(request, response) {
       "Content-Type",
       upstreamResponse.headers.get("content-type") ?? "application/json",
     );
+    response.setHeader("X-Archidekt-Upstream", upstreamUrl.toString());
     response.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=3600");
     response.send(body);
   } catch (error) {
@@ -43,4 +43,13 @@ export default async function handler(request, response) {
       error: error instanceof Error ? error.message : "Archidekt proxy failed",
     });
   }
+}
+
+function normalizePathParts(rawPath) {
+  const parts = Array.isArray(rawPath) ? rawPath : [rawPath].filter(Boolean);
+
+  return parts
+    .flatMap((part) => String(part).split("/"))
+    .map((part) => part.trim())
+    .filter(Boolean);
 }

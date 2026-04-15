@@ -122,7 +122,7 @@ async function fetchArchidektDeck(id: string) {
     });
 
     if (!response.ok) {
-      throw new Error(`Archidekt returned ${response.status}.`);
+      throw new Error(await describeFailedResponse(response, "Archidekt"));
     }
 
     return (await response.json()) as ArchidektDeck;
@@ -133,6 +133,15 @@ async function fetchArchidektDeck(id: string) {
         : "Archidekt import failed. Make sure the deck is public, then try Load URL again.",
     );
   }
+}
+
+async function describeFailedResponse(response: Response, service: string) {
+  const text = await response.text();
+  const detail = text.trim().slice(0, 220);
+
+  return detail
+    ? `${service} returned ${response.status}: ${detail}`
+    : `${service} returned ${response.status}`;
 }
 
 function boardToText(label: string, board?: Record<string, MoxfieldBoardCard>) {
