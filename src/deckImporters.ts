@@ -79,12 +79,7 @@ async function importArchidektDeck(url: URL) {
     throw new Error("Could not find the Archidekt deck id.");
   }
 
-  const response = await fetch(`/archidekt-api/decks/${id}/`);
-  if (!response.ok) {
-    throw new Error(`Archidekt returned ${response.status}.`);
-  }
-
-  const deck = (await response.json()) as ArchidektDeck;
+  const deck = await fetchArchidektDeck(id);
   const commander: string[] = [];
   const main: string[] = [];
   const sideboard: string[] = [];
@@ -118,6 +113,26 @@ async function importArchidektDeck(url: URL) {
       .filter(Boolean)
       .join("\n\n"),
   };
+}
+
+async function fetchArchidektDeck(id: string) {
+  try {
+    const response = await fetch(`/archidekt-api/decks/${id}/`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Archidekt returned ${response.status}.`);
+    }
+
+    return (await response.json()) as ArchidektDeck;
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Archidekt import failed: ${error.message}. Make sure the deck is public, then try Load URL again.`
+        : "Archidekt import failed. Make sure the deck is public, then try Load URL again.",
+    );
+  }
 }
 
 function boardToText(label: string, board?: Record<string, MoxfieldBoardCard>) {

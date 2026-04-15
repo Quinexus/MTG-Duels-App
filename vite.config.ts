@@ -6,9 +6,9 @@ export default defineConfig({
   server: {
     proxy: {
       "/archidekt-api": {
-        target: "https://archidekt.com/api",
+        target: "https://archidekt.com",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/archidekt-api/, ""),
+        rewrite: (path) => path.replace(/^\/archidekt-api/, "/api"),
       },
       "/moxfield-api": {
         target: "https://api2.moxfield.com",

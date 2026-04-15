@@ -557,6 +557,44 @@ function App() {
     setGame((current) => updateCards(current, [selected.instanceId], update, action));
   }
 
+  function toggleTapped(cardId: string) {
+    setGame((current) => {
+      const target = current.instances.find((card) => card.instanceId === cardId);
+      if (!target || target.zone !== "battlefield") {
+        return current;
+      }
+
+      return updateCards(
+        current,
+        [cardId],
+        { tapped: !target.tapped },
+        `${target.tapped ? "Untapped" : "Tapped"} ${target.name}.`,
+      );
+    });
+  }
+
+  function untapAllBattlefield() {
+    setGame((current) => {
+      const tappedCards = current.instances.filter(
+        (card) => card.zone === "battlefield" && card.tapped,
+      );
+
+      if (tappedCards.length === 0) {
+        return {
+          ...current,
+          actions: [createAction("Untap step: no tapped permanents."), ...current.actions],
+        };
+      }
+
+      return updateCards(
+        current,
+        tappedCards.map((card) => card.instanceId),
+        { tapped: false },
+        `Untapped ${tappedCards.length} permanent${tappedCards.length === 1 ? "" : "s"}.`,
+      );
+    });
+  }
+
   function createToken() {
     createTokenInstances("battlefield");
   }
@@ -1048,6 +1086,7 @@ function App() {
           <p className="eyebrow">Table actions</p>
           <button onClick={() => draw(1)}>Draw 1</button>
           <button onClick={() => draw(7)}>Draw 7</button>
+          <button onClick={untapAllBattlefield}>Untap all</button>
           <button onClick={() => scry(1)}>Scry 1</button>
           <button onClick={() => scry(2)}>Scry 2</button>
           {libraryView !== "hidden" && <button onClick={closeLibraryReveal}>Done looking</button>}
@@ -1261,6 +1300,7 @@ function App() {
                   onLeaveCard={() => setHoverPreview(undefined)}
                   onDrop={onDrop}
                   onFreeMove={moveFreeBattlefieldCard}
+                  onDoubleClickCard={toggleTapped}
                   onSelect={(card) => {
                     setSelectedRemote(undefined);
                     setGame((current) => ({
@@ -1640,6 +1680,7 @@ function BattlefieldZone({
   onLeaveCard,
   onDrop,
   onFreeMove,
+  onDoubleClickCard,
   onSelect,
   onDragStart,
 }: {
@@ -1656,6 +1697,7 @@ function BattlefieldZone({
     lane?: BattlefieldLane,
   ) => void;
   onFreeMove: (cardId: string, x: number, y: number) => void;
+  onDoubleClickCard: (cardId: string) => void;
   onSelect: (card: CardInstance) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
 }) {
@@ -1677,6 +1719,7 @@ function BattlefieldZone({
             onHover={(event) => onHoverCard(card, event)}
             onLeave={onLeaveCard}
             onMove={(x, y) => onFreeMove(card.instanceId, x, y)}
+            onDoubleClick={() => onDoubleClickCard(card.instanceId)}
           />
         ))}
       </div>
@@ -1714,6 +1757,7 @@ function BattlefieldZone({
                   onHover={(event) => onHoverCard(card, event)}
                   onLeave={onLeaveCard}
                   onSelect={() => onSelect(card)}
+                  onDoubleClick={() => onDoubleClickCard(card.instanceId)}
                   onDragStart={(event) => onDragStart(event, card)}
                 />
               ))}
@@ -1734,6 +1778,7 @@ function FreeBattlefieldCard({
   onLeave,
   onSelect,
   onMove,
+  onDoubleClick,
 }: {
   card: CardInstance;
   data?: CardData;
@@ -1743,6 +1788,7 @@ function FreeBattlefieldCard({
   onLeave: () => void;
   onSelect: () => void;
   onMove: (x: number, y: number) => void;
+  onDoubleClick: () => void;
 }) {
   function onDragEnd(event: DragEvent<HTMLButtonElement>) {
     const board = event.currentTarget.closest(".battlefield-free");
@@ -1773,6 +1819,7 @@ function FreeBattlefieldCard({
         onHover={onHover}
         onLeave={onLeave}
         onSelect={onSelect}
+        onDoubleClick={onDoubleClick}
         onDragStart={(event) => event.dataTransfer.setData("text/plain", card.instanceId)}
         onDragEnd={onDragEnd}
       />
@@ -2000,6 +2047,7 @@ function CardTile({
   onHover,
   onLeave,
   onSelect,
+  onDoubleClick,
   onDragStart,
   onDragEnd,
 }: {
@@ -2012,6 +2060,7 @@ function CardTile({
   onHover?: (event: MouseEvent<HTMLElement>) => void;
   onLeave?: () => void;
   onSelect: () => void;
+  onDoubleClick?: () => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void;
 }) {
@@ -2024,6 +2073,7 @@ function CardTile({
         card.tapped ? "is-tapped" : ""
       } ${compact ? "is-compact" : ""}`}
       onClick={onSelect}
+      onDoubleClick={onDoubleClick}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
