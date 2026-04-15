@@ -155,6 +155,7 @@ function App() {
   const [leftTool, setLeftTool] = useState<LeftTool>("deck");
   const [rightTool, setRightTool] = useState<RightTool>("card");
   const [cardScale, setCardScale] = useState(1);
+  const [freeBattlefieldExpanded, setFreeBattlefieldExpanded] = useState(false);
   const [hoverPreview, setHoverPreview] = useState<{
     card: CardData;
     imageUrl?: string;
@@ -563,7 +564,7 @@ function App() {
     }
 
     const board = event.currentTarget.getBoundingClientRect();
-    const cardWidth = 86 * cardScale;
+    const cardWidth = 70 * cardScale;
     const cardHeight = cardWidth / 0.714;
     const x = ((event.clientX - board.left - cardWidth / 2) / board.width) * 100;
     const y = ((event.clientY - board.top - cardHeight / 2) / board.height) * 100;
@@ -1495,14 +1496,18 @@ function App() {
         <div className="zones-grid">
           <p className="touch-hint">
             Touch: tap a card, then tap a zone to move it. In free move, tap the board spot.
-            Double-tap battlefield cards to tap.
+            Use Expand for a larger scrollable board. Double-tap battlefield cards to tap.
           </p>
           {visibleZones.map((zone) => (
             <section
               key={zone.id}
               className={`zone zone-${zone.id} ${
                 game.activeZone === zone.id ? "is-active" : ""
-              } ${zone.id === "battlefield" && game.battlefieldLayout === "free" ? "is-free-mode" : ""}`}
+              } ${zone.id === "battlefield" && game.battlefieldLayout === "free" ? "is-free-mode" : ""} ${
+                zone.id === "battlefield" && game.battlefieldLayout === "free" && freeBattlefieldExpanded
+                  ? "is-free-expanded"
+                  : ""
+              }`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => onDrop(event, zone.id)}
               onClick={() => {
@@ -1510,7 +1515,36 @@ function App() {
                 moveSelectedByTouch(zone.id);
               }}
             >
-              {zone.id === "command" ? (
+              {zone.id === "battlefield" ? (
+                <div className="zone-heading battlefield-heading">
+                  <button
+                    className="battlefield-heading-title"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setGame((current) => ({ ...current, activeZone: zone.id }))
+                      moveSelectedByTouch(zone.id);
+                    }}
+                  >
+                    <span>
+                      <strong>{zone.label}</strong>
+                      <small>{game.battlefieldLayout === "free" ? "Free move board" : zone.helper}</small>
+                    </span>
+                  </button>
+                  <div className="battlefield-heading-tools">
+                    {game.battlefieldLayout === "free" && (
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFreeBattlefieldExpanded((current) => !current);
+                        }}
+                      >
+                        {freeBattlefieldExpanded ? "Fit" : "Expand"}
+                      </button>
+                    )}
+                    <b>{zone.cards.length}</b>
+                  </div>
+                </div>
+              ) : zone.id === "command" ? (
                 <div className="zone-heading command-heading">
                   <button
                     className="command-heading-title"

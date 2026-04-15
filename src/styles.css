@@ -910,19 +910,36 @@ select:focus {
   cursor: pointer;
 }
 
-.command-heading {
+.command-heading,
+.battlefield-heading {
   gap: 6px;
   align-items: center;
   cursor: default;
 }
 
-.command-heading-title {
+.command-heading-title,
+.battlefield-heading-title {
   flex: 1;
   padding: 0;
   background: transparent;
   border: 0;
   color: inherit;
   text-align: left;
+  cursor: pointer;
+}
+
+.battlefield-heading-tools {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.battlefield-heading-tools button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+  background: #242822;
   cursor: pointer;
 }
 
@@ -964,7 +981,8 @@ select:focus {
   color: #9c9a92;
 }
 
-.zone-heading > b {
+.zone-heading > b,
+.battlefield-heading-tools b {
   display: grid;
   place-items: center;
   width: 32px;
@@ -1075,7 +1093,7 @@ select:focus {
 }
 
 .battlefield-free .card-tile {
-  width: calc(112px * var(--card-scale, 1));
+  width: calc(96px * var(--card-scale, 1));
 }
 
 .card-tile {
@@ -1656,20 +1674,8 @@ select:focus {
     min-height: 360px;
   }
 
-  .zone-battlefield.is-free-mode {
-    min-height: 460px;
-    overflow: auto;
-    overscroll-behavior: contain;
-  }
-
-  .zone-battlefield.is-free-mode .battlefield-free {
-    flex: none;
-    width: max(100%, 760px);
-    min-height: 620px;
-  }
-
   .battlefield-free .card-tile {
-    width: calc(86px * var(--card-scale, 1));
+    width: calc(70px * var(--card-scale, 1));
   }
 
   .zone-hand {
@@ -1729,9 +1735,16 @@ select:focus {
     display: none;
   }
 
-  .zone-heading > b {
+  .zone-heading > b,
+  .battlefield-heading-tools b {
     width: 28px;
     height: 28px;
+  }
+
+  .battlefield-heading-tools button {
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
   }
 
   .commander-tax-controls {
@@ -1842,12 +1855,24 @@ select:focus {
   }
 
   .zone-battlefield.is-free-mode {
-    min-height: 520px;
+    min-height: 430px;
+    overflow: hidden;
+  }
+
+  .zone-battlefield.is-free-expanded {
+    min-height: 500px;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .zone-battlefield.is-free-mode .battlefield-free {
-    width: max(100%, 820px);
-    min-height: 700px;
+    width: 100%;
+    min-height: 360px;
+  }
+
+  .zone-battlefield.is-free-expanded .battlefield-free {
+    width: max(100%, 760px);
+    min-height: 600px;
   }
 
   .battlefield-lane {
@@ -1915,14 +1940,23 @@ select:focus {
   }
 
   .zone-battlefield.is-free-mode {
+    overflow: hidden;
+  }
+
+  .zone-battlefield.is-free-mode .battlefield-free {
+    width: 100%;
+    min-height: 220px;
+  }
+
+  .zone-battlefield.is-free-expanded {
     overflow: auto;
     overscroll-behavior: contain;
   }
 
-  .zone-battlefield.is-free-mode .battlefield-free {
+  .zone-battlefield.is-free-expanded .battlefield-free {
     flex: none;
-    width: max(100%, 980px);
-    min-height: 520px;
+    width: max(100%, 760px);
+    min-height: 420px;
   }
 
   .zone-graveyard,
