@@ -538,6 +538,18 @@ function App() {
     }
   }
 
+  function moveSelectedByTouch(zone: ZoneId, lane?: BattlefieldLane) {
+    if (!isCompactViewport() || !selected || selectedRemote) {
+      return;
+    }
+
+    if (selected.zone === zone && selected.battlefieldLane === lane) {
+      return;
+    }
+
+    moveCard(selected.instanceId, zone, lane);
+  }
+
   function changeCounter(type: CounterType, delta: number) {
     if (!selected) {
       return;
@@ -1375,6 +1387,9 @@ function App() {
         )}
 
         <div className="zones-grid">
+          <p className="touch-hint">
+            Touch: tap a card, then tap a zone to move it. Double-tap battlefield cards to tap.
+          </p>
           {visibleZones.map((zone) => (
             <section
               key={zone.id}
@@ -1383,12 +1398,18 @@ function App() {
               }`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => onDrop(event, zone.id)}
+              onClick={() => {
+                setGame((current) => ({ ...current, activeZone: zone.id }));
+                moveSelectedByTouch(zone.id);
+              }}
             >
               <button
                 className="zone-heading"
-                onClick={() =>
+                onClick={(event) => {
+                  event.stopPropagation();
                   setGame((current) => ({ ...current, activeZone: zone.id }))
-                }
+                  moveSelectedByTouch(zone.id);
+                }}
               >
                 <span>
                   <strong>{zone.label}</strong>
@@ -1409,6 +1430,7 @@ function App() {
                   onDrop={onDrop}
                   onFreeMove={moveFreeBattlefieldCard}
                   onDoubleClickCard={toggleTapped}
+                  onTapZone={(lane) => moveSelectedByTouch("battlefield", lane)}
                   onSelect={(card) => {
                     setSelectedRemote(undefined);
                     setGame((current) => ({
@@ -1819,6 +1841,7 @@ function BattlefieldZone({
   onDrop,
   onFreeMove,
   onDoubleClickCard,
+  onTapZone,
   onSelect,
   onDragStart,
 }: {
@@ -1836,6 +1859,7 @@ function BattlefieldZone({
   ) => void;
   onFreeMove: (cardId: string, x: number, y: number) => void;
   onDoubleClickCard: (cardId: string) => void;
+  onTapZone: (lane?: BattlefieldLane) => void;
   onSelect: (card: CardInstance) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
 }) {
@@ -1845,6 +1869,10 @@ function BattlefieldZone({
         className="battlefield-free"
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => onDrop(event, "battlefield")}
+        onClick={(event) => {
+          event.stopPropagation();
+          onTapZone();
+        }}
       >
         {cards.map((card) => (
           <FreeBattlefieldCard
@@ -1875,6 +1903,10 @@ function BattlefieldZone({
             key={lane.id}
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => onDrop(event, "battlefield", lane.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onTapZone(lane.id);
+            }}
           >
             <header>
               <span>
@@ -2227,7 +2259,10 @@ function CardTile({
       className={`card-tile ${isSelected ? "is-selected" : ""} ${
         card.tapped ? "is-tapped" : ""
       } ${compact ? "is-compact" : ""}`}
-      onClick={onSelect}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
       onDoubleClick={onDoubleClick}
       draggable={!isCompactViewport()}
       onDragStart={onDragStart}

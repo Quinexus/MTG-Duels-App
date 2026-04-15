@@ -822,6 +822,10 @@ select:focus {
   min-height: 0;
 }
 
+.touch-hint {
+  display: none;
+}
+
 .zone {
   display: flex;
   flex-direction: column;
@@ -1528,6 +1532,20 @@ select:focus {
     grid-template-rows: none;
     grid-auto-rows: auto;
     gap: 8px;
+  }
+
+  .touch-hint {
+    display: block;
+    grid-column: 1 / -1;
+    order: 0;
+    margin: 0;
+    padding: 8px 10px;
+    color: #c9c5b9;
+    background: rgba(10, 12, 10, 0.62);
+    border: 1px solid rgba(247, 243, 234, 0.1);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.35;
   }
 
   .zone-library,
