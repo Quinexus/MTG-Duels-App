@@ -17,6 +17,7 @@ import {
 import { importDeckFromUrl } from "./deckImporters";
 import {
   createLobbyTransport,
+  getConfiguredRelayUrl,
   getSavedRelayUrl,
   saveRelayUrl,
   type LobbyTransport,
@@ -123,7 +124,9 @@ function App() {
   const [peersById, setPeersById] = useState<Record<string, PublicPlayerState>>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [configuredRelayUrl] = useState(getConfiguredRelayUrl);
   const [relayUrl, setRelayUrl] = useState(getSavedRelayUrl);
+  const [isRelaySettingsOpen, setIsRelaySettingsOpen] = useState(false);
   const [transportStatus, setTransportStatus] = useState<LobbyTransportStatus>("local");
   const transportRef = useRef<LobbyTransport | undefined>(undefined);
   const gameRef = useRef<GameState>(initialState);
@@ -183,6 +186,8 @@ function App() {
   }, [mode, peers, playerId, playerName]);
   const connectedRoomLabel = isConnected ? `Room ${roomCode.toUpperCase()}` : "Solo sandbox";
   const relayEnabled = Boolean(relayUrl.trim());
+  const hasConfiguredRelay = Boolean(configuredRelayUrl);
+  const canEditRelayUrl = !hasConfiguredRelay && isRelaySettingsOpen;
   const transportLabel = relayEnabled ? "Cross-device relay" : "This browser";
   const transportStatusLabel =
     transportStatus === "connected"
@@ -942,13 +947,30 @@ function App() {
                 value={roomCode}
                 onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
               />
-              <label htmlFor="relay-url">Relay URL</label>
-              <input
-                id="relay-url"
-                value={relayUrl}
-                onChange={(event) => setRelayUrl(event.target.value)}
-                placeholder="wss://relay.example.com"
-              />
+              {hasConfiguredRelay ? (
+                <p className="status-line">Cross-device relay is ready.</p>
+              ) : (
+                <>
+                  <button
+                    className="relay-toggle"
+                    type="button"
+                    onClick={() => setIsRelaySettingsOpen((current) => !current)}
+                  >
+                    {isRelaySettingsOpen ? "Hide relay settings" : "Relay settings"}
+                  </button>
+                  {canEditRelayUrl && (
+                    <>
+                      <label htmlFor="relay-url">Relay URL</label>
+                      <input
+                        id="relay-url"
+                        value={relayUrl}
+                        onChange={(event) => setRelayUrl(event.target.value)}
+                        placeholder="wss://relay.example.com"
+                      />
+                    </>
+                  )}
+                </>
+              )}
               <div className="room-actions">
                 {isConnected ? (
                   <button onClick={leaveLobby}>Leave lobby</button>

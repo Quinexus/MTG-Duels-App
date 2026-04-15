@@ -5,6 +5,8 @@ type LobbyEnvelope = {
   message: LobbyWireMessage;
 };
 
+const CONFIGURED_RELAY_URL = import.meta.env.VITE_MTG_DUELS_RELAY_URL?.trim() ?? "";
+
 export type LobbyTransportStatus = "local" | "connecting" | "connected" | "error";
 
 export type LobbyTransport = {
@@ -45,9 +47,13 @@ export function createLobbyTransport({
 }
 
 export function getSavedRelayUrl(): string {
-  const envRelayUrl = import.meta.env.VITE_MTG_DUELS_RELAY_URL;
+  const envRelayUrl = getConfiguredRelayUrl();
   const savedRelayUrl = window.localStorage.getItem("mtg-duels-relay-url");
-  return savedRelayUrl ?? envRelayUrl ?? "";
+  return envRelayUrl || savedRelayUrl || "";
+}
+
+export function getConfiguredRelayUrl(): string {
+  return CONFIGURED_RELAY_URL;
 }
 
 export function saveRelayUrl(relayUrl: string) {
