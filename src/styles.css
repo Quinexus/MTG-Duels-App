@@ -21,6 +21,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100svh;
   background:
     radial-gradient(circle at 52% 42%, rgba(42, 113, 86, 0.22), transparent 42%),
     linear-gradient(135deg, #11130f 0%, #171817 50%, #0b0d0c 100%);
@@ -40,18 +41,19 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(300px, 350px) minmax(0, 1fr) minmax(310px, 370px);
   height: 100vh;
+  height: 100svh;
   min-height: 0;
   overflow: hidden;
 }
 
 .app-shell.is-left-collapsed {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 370px);
 }
 
 .app-shell.is-right-collapsed {
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 350px) minmax(0, 1fr);
 }
 
 .app-shell.is-left-collapsed .tabletop {
@@ -72,13 +74,14 @@ button {
 
 .panel-tab {
   position: fixed;
-  z-index: 20;
-  top: 12px;
-  min-height: 34px;
-  padding: 0 10px;
+  z-index: 45;
+  top: 14px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid rgba(247, 243, 234, 0.16);
   border-radius: 8px;
-  background: rgba(36, 40, 34, 0.95);
+  background: rgba(13, 15, 13, 0.92);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
   color: #f7f3ea;
   cursor: pointer;
 }
@@ -99,13 +102,14 @@ button {
 .inspector {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: 24px;
-  background: rgba(14, 15, 13, 0.88);
+  gap: 18px;
+  padding: 18px;
+  background: rgba(13, 15, 13, 0.94);
   border-color: rgba(247, 243, 234, 0.12);
   border-style: solid;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .sidebar {
@@ -117,6 +121,45 @@ button {
   overflow: auto;
 }
 
+.panel-titlebar {
+  position: sticky;
+  z-index: 5;
+  top: -18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 0 12px;
+  background: rgba(13, 15, 13, 0.98);
+  border-bottom: 1px solid rgba(247, 243, 234, 0.1);
+}
+
+.panel-titlebar div {
+  display: grid;
+  gap: 2px;
+}
+
+.panel-titlebar span {
+  color: #f7f3ea;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.panel-titlebar small {
+  color: #9c9a92;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.panel-titlebar button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+  background: #242822;
+  cursor: pointer;
+}
+
 .brand-block h1,
 .table-header h2,
 .selected-panel h2 {
@@ -125,7 +168,7 @@ button {
 }
 
 .brand-block h1 {
-  font-size: 40px;
+  font-size: 34px;
   line-height: 0.95;
 }
 
@@ -159,6 +202,19 @@ button {
 .chat-panel {
   display: grid;
   gap: 12px;
+}
+
+.room-panel,
+.importer,
+.quick-controls,
+.flex-actions,
+.selected-panel,
+.commander-damage-panel,
+.log-panel,
+.reference-panel,
+.chat-panel {
+  padding-top: 14px;
+  border-top: 1px solid rgba(247, 243, 234, 0.1);
 }
 
 .importer label {
@@ -243,6 +299,10 @@ select:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.quick-controls .eyebrow {
+  grid-column: 1 / -1;
+}
+
 .mode-switch,
 .room-actions {
   display: grid;
@@ -317,6 +377,10 @@ select:focus {
 
 .flex-actions {
   padding-top: 4px;
+}
+
+.flex-actions .eyebrow {
+  margin-bottom: 0;
 }
 
 .x-controls,
@@ -1200,38 +1264,116 @@ select:focus {
 }
 
 @media (max-width: 860px) {
-  .app-shell {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(70vh, 1fr) auto;
-    overflow: auto;
+  .app-shell,
+  .app-shell.is-left-collapsed,
+  .app-shell.is-right-collapsed,
+  .app-shell.is-left-collapsed.is-right-collapsed {
+    display: block;
+    height: 100vh;
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  .panel-tab {
+    top: max(8px, env(safe-area-inset-top));
+    min-height: 40px;
+    font-size: 13px;
+    font-weight: 850;
+  }
+
+  .panel-tab-left {
+    left: max(8px, env(safe-area-inset-left));
+  }
+
+  .panel-tab-right {
+    right: max(8px, env(safe-area-inset-right));
   }
 
   .sidebar,
-  .inspector,
-  .tabletop {
-    padding: 18px;
-  }
-
-  .sidebar {
-    border-width: 0 0 1px;
-  }
-
-  .table-header,
   .inspector {
+    position: fixed;
+    z-index: 40;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    max-height: min(76svh, 680px);
+    padding: 14px;
+    border: 1px solid rgba(247, 243, 234, 0.16);
+    border-radius: 8px;
+    background: rgba(13, 15, 13, 0.98);
+    box-shadow: 0 18px 52px rgba(0, 0, 0, 0.5);
+  }
+
+  .panel-titlebar {
+    top: -14px;
+    padding-top: 12px;
+  }
+
+  .brand-block {
+    display: none;
+  }
+
+  .tabletop {
+    height: 100svh;
+    padding: 58px 10px 12px;
+    overflow: auto;
+  }
+
+  .table-header {
     display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .table-header h2 {
+    font-size: 22px;
   }
 
   .trackers {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(62px, 1fr));
+    gap: 6px;
     min-width: 0;
+  }
+
+  .tracker {
+    gap: 5px;
+    padding: 7px;
+  }
+
+  .tracker div {
+    grid-template-columns: 26px 1fr 26px;
+    gap: 4px;
+  }
+
+  .tracker button {
+    min-height: 28px;
+  }
+
+  .layout-controls {
+    grid-template-columns: auto minmax(76px, 1fr) 42px;
+    gap: 7px;
+    margin: 0 0 12px;
+    padding: 8px;
+    background: rgba(10, 12, 10, 0.6);
+    border: 1px solid rgba(247, 243, 234, 0.1);
+    border-radius: 8px;
+  }
+
+  .battlefield-mode-toggle,
+  .reset-board-button {
+    grid-column: 1 / -1;
+  }
+
+  .battlefield-mode-toggle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .zones-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
     grid-template-rows: none;
-    grid-auto-rows: calc(210px * var(--zone-scale));
+    grid-auto-rows: calc(185px * var(--zone-scale));
+    gap: 10px;
   }
 
   .zone-library,
@@ -1248,63 +1390,148 @@ select:focus {
     grid-column: 1 / -1;
   }
 
-  .opponent-battlefield,
-  .opponent-zones {
-    display: flex;
-    flex-direction: column;
-  }
-
   .zone,
   .zone-battlefield {
-    min-height: calc(190px * var(--zone-scale));
+    min-height: calc(165px * var(--zone-scale));
+    padding: 8px;
+  }
+
+  .zone-heading {
+    padding-bottom: 7px;
+  }
+
+  .zone-heading strong {
+    font-size: 15px;
+  }
+
+  .zone-heading small {
+    display: none;
+  }
+
+  .zone-heading b {
+    width: 28px;
+    height: 28px;
   }
 
   .battlefield-lanes {
     min-height: 0;
+    grid-template-rows: repeat(3, minmax(112px, 1fr));
+    gap: 8px;
+  }
+
+  .battlefield-lane {
+    grid-template-columns: 92px minmax(0, 1fr);
+    min-height: 112px;
+    padding: 7px;
+  }
+
+  .battlefield-lane header small {
+    display: none;
+  }
+
+  .card-tile {
+    width: calc(68px * var(--card-scale, 1));
+  }
+
+  .card-tile.is-compact {
+    width: calc(52px * var(--card-scale, 1));
+  }
+
+  .opponent-board {
+    padding: 9px;
+  }
+
+  .opponent-battlefield,
+  .opponent-zones {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .remote-zone {
+    min-width: 180px;
+  }
+
+  .remote-free-battlefield {
+    min-width: 100%;
+  }
+
+  textarea {
+    min-height: 180px;
+  }
+
+  .selected-preview {
+    width: min(190px, 70vw);
+  }
+
+  .hover-preview {
+    width: min(220px, calc(100vw - 16px));
+  }
+}
+
+@media (max-width: 860px) and (orientation: portrait) {
+  .trackers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .zones-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: calc(180px * var(--zone-scale));
+  }
+
+  .zone-library,
+  .zone-hand,
+  .zone-battlefield,
+  .zone-graveyard,
+  .zone-exile,
+  .zone-command,
+  .zone-sideboard,
+  .zone-tokenBank {
+    grid-column: 1;
+  }
+
+  .zone-battlefield {
+    min-height: calc(420px * var(--zone-scale));
   }
 
   .battlefield-lane {
     grid-template-columns: 1fr;
   }
-
-  .card-tile {
-    width: calc(74px * var(--card-scale, 1));
-  }
-
-  textarea {
-    min-height: 210px;
-  }
 }
 
 @media (max-width: 860px) and (orientation: landscape) {
-  .app-shell {
-    grid-template-columns: minmax(250px, 32vw) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  .sidebar {
-    border-width: 0 1px 0 0;
-  }
-
   .tabletop {
-    min-height: 0;
+    padding: 52px 10px 10px;
   }
 
-  .inspector {
-    grid-column: 1 / -1;
-    max-height: 36vh;
-    border-width: 1px 0 0;
+  .table-header {
+    grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1.3fr);
+    align-items: start;
+  }
+
+  .trackers {
+    grid-template-columns: repeat(4, minmax(58px, 1fr));
+  }
+
+  .layout-controls {
+    grid-template-columns: auto minmax(70px, 1fr) 40px auto minmax(70px, 1fr) 40px;
+  }
+
+  .battlefield-mode-toggle {
+    grid-column: span 3;
+  }
+
+  .reset-board-button {
+    grid-column: span 3;
   }
 
   .zones-grid {
     grid-template-columns: repeat(12, minmax(0, 1fr));
     grid-template-rows:
-      calc(170px * var(--zone-scale))
-      minmax(calc(280px * var(--zone-scale)), 1fr)
-      calc(160px * var(--zone-scale));
-    grid-auto-rows: calc(160px * var(--zone-scale));
+      calc(132px * var(--zone-scale))
+      minmax(calc(250px * var(--zone-scale)), 1fr)
+      calc(128px * var(--zone-scale));
+    grid-auto-rows: calc(128px * var(--zone-scale));
   }
 
   .zone-library {
@@ -1312,7 +1539,7 @@ select:focus {
   }
 
   .zone-hand {
-    grid-column: span 6;
+    grid-column: span 9;
   }
 
   .zone-battlefield {
@@ -1327,7 +1554,35 @@ select:focus {
     grid-column: span 3;
   }
 
+  .battlefield-lanes {
+    grid-template-rows: repeat(3, minmax(94px, 1fr));
+  }
+
+  .battlefield-lane {
+    grid-template-columns: 86px minmax(0, 1fr);
+    min-height: 94px;
+  }
+
   .card-tile {
-    width: calc(62px * var(--card-scale, 1));
+    width: calc(58px * var(--card-scale, 1));
+  }
+
+  .card-tile.is-compact {
+    width: calc(48px * var(--card-scale, 1));
+  }
+
+  .sidebar,
+  .inspector {
+    top: max(54px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    right: auto;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: min(390px, 52vw);
+    max-height: none;
+  }
+
+  .inspector {
+    left: auto;
+    right: max(8px, env(safe-area-inset-right));
   }
 }

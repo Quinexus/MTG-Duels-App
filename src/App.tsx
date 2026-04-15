@@ -15,6 +15,13 @@ import {
   uniqueCardNames,
 } from "./deck";
 import { importDeckFromUrl } from "./deckImporters";
+import {
+  createLobbyTransport,
+  getSavedRelayUrl,
+  saveRelayUrl,
+  type LobbyTransport,
+  type LobbyTransportStatus,
+} from "./multiplayer";
 import { preconDecks, randomPrecon } from "./precons";
 import archidektCatalog from "./archidekt-precons.json";
 import { fetchCardFromScryfallInput, fetchCardsForDeckLines } from "./scryfall";
@@ -116,7 +123,9 @@ function App() {
   const [peersById, setPeersById] = useState<Record<string, PublicPlayerState>>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
-  const channelRef = useRef<BroadcastChannel | undefined>(undefined);
+  const [relayUrl, setRelayUrl] = useState(getSavedRelayUrl);
+  const [transportStatus, setTransportStatus] = useState<LobbyTransportStatus>("local");
+  const transportRef = useRef<LobbyTransport | undefined>(undefined);
   const gameRef = useRef<GameState>(initialState);
   const [selectedPreconId, setSelectedPreconId] = useState(initialPrecon.id);
   const [deckInput, setDeckInput] = useState(initialPrecon.decklist);
@@ -132,8 +141,8 @@ function App() {
   const [libraryView, setLibraryView] = useState<"hidden" | "scry" | "search">("hidden");
   const [scryCount, setScryCount] = useState(0);
   const [layoutScale, setLayoutScale] = useState(1.35);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isCompactViewport());
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => !isCompactViewport());
   const [cardScale, setCardScale] = useState(1);
   const [hoverPreview, setHoverPreview] = useState<{
     card: CardData;
@@ -173,6 +182,16 @@ function App() {
     ];
   }, [mode, peers, playerId, playerName]);
   const connectedRoomLabel = isConnected ? `Room ${roomCode.toUpperCase()}` : "Solo sandbox";
+  const relayEnabled = Boolean(relayUrl.trim());
+  const transportLabel = relayEnabled ? "Cross-device relay" : "This browser";
+  const transportStatusLabel =
+    transportStatus === "connected"
+      ? "relay connected"
+      : transportStatus === "connecting"
+        ? "relay connecting"
+        : transportStatus === "error"
+          ? "relay unavailable"
+          : "local tabs";
 
   const selected = game.instances.find((card) => card.instanceId === game.selectedId);
   const selectedData = selected ? game.cardsById[selected.cardId] : undefined;
@@ -196,33 +215,39 @@ function App() {
   );
 
   const postLobbyMessage = useCallback((message: LobbyWireMessage) => {
-    channelRef.current?.postMessage(message);
+    transportRef.current?.postMessage(message);
   }, []);
 
-  const publishState = useCallback(() => {
-    postLobbyMessage({
+  const buildJoinMessage = useCallback(
+    (): LobbyWireMessage => ({
+      type: "join",
+      playerId,
+      playerName,
+      roomCode: roomCode.toUpperCase(),
+    }),
+    [playerId, playerName, roomCode],
+  );
+
+  const buildStateMessage = useCallback(
+    (): LobbyWireMessage => ({
       type: "state",
       playerId,
       state: buildPublicState(gameRef.current, playerId, playerName, roomCode),
-    });
-  }, [playerId, playerName, postLobbyMessage, roomCode]);
+    }),
+    [playerId, playerName, roomCode],
+  );
 
-  useEffect(() => {
-    gameRef.current = game;
-  }, [game]);
+  const getLobbyOpenMessages = useCallback(
+    () => [buildJoinMessage(), buildStateMessage()],
+    [buildJoinMessage, buildStateMessage],
+  );
 
-  useEffect(() => {
-    if (!isConnected) {
-      channelRef.current?.close();
-      channelRef.current = undefined;
-      return;
-    }
+  const publishState = useCallback(() => {
+    postLobbyMessage(buildStateMessage());
+  }, [buildStateMessage, postLobbyMessage]);
 
-    const channel = new BroadcastChannel(`mtg-duels-room-${roomCode.toUpperCase()}`);
-    channelRef.current = channel;
-
-    channel.onmessage = (event: MessageEvent<LobbyWireMessage>) => {
-      const message = event.data;
+  const handleLobbyMessage = useCallback(
+    (message: LobbyWireMessage) => {
       if (!message || message.playerId === playerId) {
         return;
       }
@@ -253,29 +278,60 @@ function App() {
             : [...current, message.message].slice(-60),
         );
       }
-    };
+    },
+    [playerId, publishState, roomCode],
+  );
 
-    postLobbyMessage({
-      type: "join",
-      playerId,
-      playerName,
-      roomCode: roomCode.toUpperCase(),
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      transportRef.current?.close();
+      transportRef.current = undefined;
+      setTransportStatus("local");
+      return;
+    }
+
+    const transport = createLobbyTransport({
+      roomCode,
+      relayUrl,
+      onMessage: handleLobbyMessage,
+      onStatusChange: setTransportStatus,
+      getOpenMessages: getLobbyOpenMessages,
     });
-    publishState();
+    transportRef.current = transport;
+
+    if (!relayUrl.trim()) {
+      postLobbyMessage(buildJoinMessage());
+      publishState();
+    }
 
     return () => {
-      channel.postMessage({
+      transport.postMessage({
         type: "leave",
         playerId,
         playerName,
         roomCode: roomCode.toUpperCase(),
       } satisfies LobbyWireMessage);
-      channel.close();
-      if (channelRef.current === channel) {
-        channelRef.current = undefined;
+      transport.close();
+      if (transportRef.current === transport) {
+        transportRef.current = undefined;
       }
     };
-  }, [isConnected, playerId, playerName, postLobbyMessage, publishState, roomCode]);
+  }, [
+    buildJoinMessage,
+    getLobbyOpenMessages,
+    handleLobbyMessage,
+    isConnected,
+    playerId,
+    playerName,
+    postLobbyMessage,
+    publishState,
+    relayUrl,
+    roomCode,
+  ]);
 
   useEffect(() => {
     if (isConnected) {
@@ -759,9 +815,14 @@ function App() {
 
   function joinLobby() {
     setRoomCode(roomCode.trim().toUpperCase() || createRoomCode());
+    saveRelayUrl(relayUrl);
     setMode("multiplayer");
     setIsConnected(true);
-    setStatus("Lobby joined. Open the same room in another tab to test sync.");
+    setStatus(
+      relayUrl.trim()
+        ? "Lobby joined. Use this room code on another device connected to the same relay."
+        : "Lobby joined locally. Add a relay URL for cross-device play.",
+    );
   }
 
   function leaveLobby() {
@@ -827,16 +888,23 @@ function App() {
         className="panel-tab panel-tab-left"
         onClick={() => setLeftPanelOpen((current) => !current)}
       >
-        {leftPanelOpen ? "Hide import" : "Show import"}
+        {leftPanelOpen ? "Hide deck" : "Deck & room"}
       </button>
       <button
         className="panel-tab panel-tab-right"
         onClick={() => setRightPanelOpen((current) => !current)}
       >
-        {rightPanelOpen ? "Hide details" : "Show details"}
+        {rightPanelOpen ? "Hide details" : "Details & chat"}
       </button>
 
       {leftPanelOpen && <aside className="sidebar">
+        <div className="panel-titlebar">
+          <div>
+            <span>Deck & room</span>
+            <small>Import, lobby, setup</small>
+          </div>
+          <button onClick={() => setLeftPanelOpen(false)}>Close</button>
+        </div>
         <div className="brand-block">
           <p className="eyebrow">MTG Duels</p>
           <h1>Sandbox table</h1>
@@ -847,6 +915,7 @@ function App() {
         </div>
 
         <section className="room-panel" aria-label="Room mode">
+          <p className="eyebrow">Play mode</p>
           <div className="mode-switch">
             <button className={mode === "solo" ? "is-active" : ""} onClick={startSolo}>
               Solo
@@ -873,6 +942,13 @@ function App() {
                 value={roomCode}
                 onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
               />
+              <label htmlFor="relay-url">Relay URL</label>
+              <input
+                id="relay-url"
+                value={relayUrl}
+                onChange={(event) => setRelayUrl(event.target.value)}
+                placeholder="wss://relay.example.com"
+              />
               <div className="room-actions">
                 {isConnected ? (
                   <button onClick={leaveLobby}>Leave lobby</button>
@@ -883,8 +959,8 @@ function App() {
               </div>
               <p className="status-line">
                 {isConnected
-                  ? `${peers.length + 1} player${peers.length ? "s" : ""} in ${roomCode.toUpperCase()}.`
-                  : "Use the same code in another tab for local room testing."}
+                  ? `${peers.length + 1} player${peers.length ? "s" : ""} in ${roomCode.toUpperCase()} via ${transportStatusLabel}.`
+                  : `${transportLabel}. Add a WebSocket relay URL to play across devices.`}
               </p>
             </div>
           ) : (
@@ -893,6 +969,7 @@ function App() {
         </section>
 
         <section className="importer" aria-label="Deck importer">
+          <p className="eyebrow">Deck setup</p>
           <div className="precon-picker">
             <label htmlFor="precon">Local precon</label>
             <select
@@ -946,6 +1023,7 @@ function App() {
         </section>
 
         <section className="quick-controls" aria-label="Game controls">
+          <p className="eyebrow">Table actions</p>
           <button onClick={() => draw(1)}>Draw 1</button>
           <button onClick={() => draw(7)}>Draw 7</button>
           <button onClick={() => scry(1)}>Scry 1</button>
@@ -1120,8 +1198,8 @@ function App() {
               ))
             ) : (
               <p className="empty-note">
-                No one else is in this browser room yet. Open the same URL in a second
-                tab, choose Lobby, and join {roomCode.toUpperCase()}.
+                No one else is in this room yet. Join {roomCode.toUpperCase()} from
+                another {relayEnabled ? "device using the same relay" : "tab in this browser"}.
               </p>
             )}
           </section>
@@ -1205,6 +1283,13 @@ function App() {
       </section>
 
       {rightPanelOpen && <aside className="inspector">
+        <div className="panel-titlebar">
+          <div>
+            <span>Details & table log</span>
+            <small>Selected card, damage, chat</small>
+          </div>
+          <button onClick={() => setRightPanelOpen(false)}>Close</button>
+        </div>
         <section className="selected-panel" aria-label="Selected card">
           <p className="eyebrow">Selected</p>
           {selectedRemoteCard && selectedRemoteData && selectedRemotePlayer ? (
@@ -2097,6 +2182,10 @@ function clamp(value: number, min: number, max: number) {
   }
 
   return Math.min(max, Math.max(min, value));
+}
+
+function isCompactViewport() {
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 860px)").matches;
 }
 
 function inferBattlefieldLane(game: GameState, cardId: string): BattlefieldLane {

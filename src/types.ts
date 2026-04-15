@@ -91,6 +91,7 @@ export type PublicCard = {
   counters: CounterMap;
   faceDown: boolean;
   isToken: boolean;
+  isGenerated: boolean;
   battlefieldLane: BattlefieldLane;
   battlefieldPosition: {
     x: number;
