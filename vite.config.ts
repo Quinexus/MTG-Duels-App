@@ -5,6 +5,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      "/api/archidekt": {
+        target: "https://archidekt.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/archidekt/, "/api"),
+      },
       "/archidekt-api": {
         target: "https://archidekt.com",
         changeOrigin: true,

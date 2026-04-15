@@ -117,7 +117,7 @@ async function importArchidektDeck(url: URL) {
 
 async function fetchArchidektDeck(id: string) {
   try {
-    const response = await fetch(`/archidekt-api/decks/${id}/`, {
+    const response = await fetch(`/api/archidekt/decks/${id}/`, {
       headers: { Accept: "application/json" },
     });
 

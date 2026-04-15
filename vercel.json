@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/archidekt-api/:path*",
-      "destination": "https://archidekt.com/api/:path*"
-    },
-    {
       "source": "/moxfield-api/:path*",
       "destination": "https://api2.moxfield.com/:path*"
     }
