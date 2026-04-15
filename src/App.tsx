@@ -114,6 +114,9 @@ const initialState: GameState = {
   commanderDamage: {},
 };
 
+type LeftTool = "room" | "deck" | "actions";
+type RightTool = "card" | "damage" | "log" | "chat";
+
 function App() {
   const [initialPrecon] = useState(randomPrecon);
   const [playerId] = useState(getOrCreatePlayerId);
@@ -146,6 +149,8 @@ function App() {
   const [layoutScale, setLayoutScale] = useState(1.35);
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isCompactViewport());
   const [rightPanelOpen, setRightPanelOpen] = useState(() => !isCompactViewport());
+  const [leftTool, setLeftTool] = useState<LeftTool>("deck");
+  const [rightTool, setRightTool] = useState<RightTool>("card");
   const [cardScale, setCardScale] = useState(1);
   const [hoverPreview, setHoverPreview] = useState<{
     card: CardData;
@@ -919,6 +924,22 @@ function App() {
     }
   }
 
+  function openLeftTool(tool: LeftTool) {
+    setLeftTool(tool);
+    setLeftPanelOpen(true);
+    if (isCompactViewport()) {
+      setRightPanelOpen(false);
+    }
+  }
+
+  function openRightTool(tool: RightTool) {
+    setRightTool(tool);
+    setRightPanelOpen(true);
+    if (isCompactViewport()) {
+      setLeftPanelOpen(false);
+    }
+  }
+
   return (
     <main
       className={`app-shell ${leftPanelOpen ? "" : "is-left-collapsed"} ${
@@ -929,239 +950,315 @@ function App() {
     >
       <button
         className="panel-tab panel-tab-left"
-        onClick={() => setLeftPanelOpen((current) => !current)}
+        onClick={() => {
+          if (leftPanelOpen) {
+            setLeftPanelOpen(false);
+          } else {
+            openLeftTool(leftTool);
+          }
+        }}
       >
-        {leftPanelOpen ? "Hide deck" : "Deck & room"}
+        {leftPanelOpen ? "Hide tools" : "Tools"}
       </button>
       <button
         className="panel-tab panel-tab-right"
-        onClick={() => setRightPanelOpen((current) => !current)}
+        onClick={() => {
+          if (rightPanelOpen) {
+            setRightPanelOpen(false);
+          } else {
+            openRightTool(rightTool);
+          }
+        }}
       >
-        {rightPanelOpen ? "Hide details" : "Details & chat"}
+        {rightPanelOpen ? "Hide info" : "Info"}
       </button>
 
       {leftPanelOpen && <aside className="sidebar">
         <div className="panel-titlebar">
           <div>
-            <span>Deck & room</span>
-            <small>Import, lobby, setup</small>
+            <span>Table tools</span>
+            <small>Room, deck, actions</small>
           </div>
           <button onClick={() => setLeftPanelOpen(false)}>Close</button>
         </div>
-        <div className="brand-block">
-          <p className="eyebrow">MTG Duels</p>
-          <h1>Sandbox table</h1>
-          <p>
-            Import a real deck, draw an opening hand, and move cards freely while
-            you test lines before buying.
-          </p>
+
+        <div className="tool-tabs" role="tablist" aria-label="Table tools">
+          <button
+            className={leftTool === "room" ? "is-active" : ""}
+            onClick={() => setLeftTool("room")}
+          >
+            Room
+          </button>
+          <button
+            className={leftTool === "deck" ? "is-active" : ""}
+            onClick={() => setLeftTool("deck")}
+          >
+            Deck
+          </button>
+          <button
+            className={leftTool === "actions" ? "is-active" : ""}
+            onClick={() => setLeftTool("actions")}
+          >
+            Actions
+          </button>
         </div>
 
-        <section className="room-panel" aria-label="Room mode">
-          <p className="eyebrow">Play mode</p>
-          <div className="mode-switch">
-            <button className={mode === "solo" ? "is-active" : ""} onClick={startSolo}>
-              Solo
-            </button>
-            <button
-              className={mode === "multiplayer" ? "is-active" : ""}
-              onClick={() => setMode("multiplayer")}
-            >
-              Lobby
-            </button>
-          </div>
-
-          {mode === "multiplayer" ? (
-            <div className="room-fields">
-              <label htmlFor="player-name">Name</label>
-              <input
-                id="player-name"
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-              />
-              <label htmlFor="room-code">Room code</label>
-              <input
-                id="room-code"
-                value={roomCode}
-                onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
-              />
-              {hasConfiguredRelay ? (
-                <p className="status-line">Cross-device relay is ready.</p>
-              ) : (
-                <>
-                  <button
-                    className="relay-toggle"
-                    type="button"
-                    onClick={() => setIsRelaySettingsOpen((current) => !current)}
-                  >
-                    {isRelaySettingsOpen ? "Hide relay settings" : "Relay settings"}
-                  </button>
-                  {canEditRelayUrl && (
-                    <>
-                      <label htmlFor="relay-url">Relay URL</label>
-                      <input
-                        id="relay-url"
-                        value={relayUrl}
-                        onChange={(event) => setRelayUrl(event.target.value)}
-                        placeholder="wss://relay.example.com"
-                      />
-                    </>
-                  )}
-                </>
-              )}
-              <div className="room-actions">
-                {isConnected ? (
-                  <button onClick={leaveLobby}>Leave lobby</button>
-                ) : (
-                  <button onClick={joinLobby}>Join lobby</button>
-                )}
-                <button onClick={() => setRoomCode(createRoomCode())}>New code</button>
+        <div className="panel-body">
+          {leftTool === "room" && (
+            <>
+              <div className="brand-block">
+                <p className="eyebrow">MTG Duels</p>
+                <h1>Sandbox table</h1>
+                <p>Goldfish lines, test pods, and tune lists before buying.</p>
               </div>
-              <p className="status-line">
-                {isConnected
-                  ? `${peers.length + 1} player${peers.length ? "s" : ""} in ${roomCode.toUpperCase()} via ${transportStatusLabel}.`
-                  : `${transportLabel}. Add a WebSocket relay URL to play across devices.`}
-              </p>
-            </div>
-          ) : (
-            <p className="status-line">Solo mode stays local and private.</p>
+
+              <section className="room-panel" aria-label="Room mode">
+                <p className="eyebrow">Play mode</p>
+                <div className="mode-switch">
+                  <button className={mode === "solo" ? "is-active" : ""} onClick={startSolo}>
+                    Solo
+                  </button>
+                  <button
+                    className={mode === "multiplayer" ? "is-active" : ""}
+                    onClick={() => setMode("multiplayer")}
+                  >
+                    Lobby
+                  </button>
+                </div>
+
+                {mode === "multiplayer" ? (
+                  <div className="room-fields">
+                    <label htmlFor="player-name">Name</label>
+                    <input
+                      id="player-name"
+                      value={playerName}
+                      onChange={(event) => setPlayerName(event.target.value)}
+                    />
+                    <label htmlFor="room-code">Room code</label>
+                    <input
+                      id="room-code"
+                      value={roomCode}
+                      onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
+                    />
+                    {hasConfiguredRelay ? (
+                      <p className="status-line">Cross-device relay is ready.</p>
+                    ) : (
+                      <>
+                        <button
+                          className="relay-toggle"
+                          type="button"
+                          onClick={() => setIsRelaySettingsOpen((current) => !current)}
+                        >
+                          {isRelaySettingsOpen ? "Hide relay settings" : "Relay settings"}
+                        </button>
+                        {canEditRelayUrl && (
+                          <>
+                            <label htmlFor="relay-url">Relay URL</label>
+                            <input
+                              id="relay-url"
+                              value={relayUrl}
+                              onChange={(event) => setRelayUrl(event.target.value)}
+                              placeholder="wss://relay.example.com"
+                            />
+                          </>
+                        )}
+                      </>
+                    )}
+                    <div className="room-actions">
+                      {isConnected ? (
+                        <button onClick={leaveLobby}>Leave lobby</button>
+                      ) : (
+                        <button onClick={joinLobby}>Join lobby</button>
+                      )}
+                      <button onClick={() => setRoomCode(createRoomCode())}>New code</button>
+                    </div>
+                    <p className="status-line">
+                      {isConnected
+                        ? `${peers.length + 1} player${peers.length ? "s" : ""} in ${roomCode.toUpperCase()} via ${transportStatusLabel}.`
+                        : `${transportLabel}. Add a WebSocket relay URL to play across devices.`}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="status-line">Solo mode stays local and private.</p>
+                )}
+              </section>
+            </>
           )}
-        </section>
 
-        <section className="importer" aria-label="Deck importer">
-          <p className="eyebrow">Deck setup</p>
-          <div className="precon-picker">
-            <label htmlFor="precon">Local precon</label>
-            <select
-              id="precon"
-              value={selectedPreconId}
-              onChange={(event) => choosePrecon(event.target.value)}
-            >
-              <option value="">Custom / imported deck</option>
-              {preconDecks.map((deck) => (
-                <option key={deck.id} value={deck.id}>
-                  {deck.name} - {deck.commander}
-                </option>
-              ))}
-            </select>
-            <button onClick={chooseRandomPrecon}>Random precon</button>
-          </div>
-          <div className="url-importer">
-            <label htmlFor="deck-url">Archidekt or Moxfield URL</label>
-            <select
-              id="archidekt-catalog"
-              value={selectedCatalogUrl}
-              onChange={(event) => chooseCatalogDeck(event.target.value)}
-            >
-              {archidektCatalog.decks.map((deck) => (
-                <option key={deck.id} value={deck.url}>
-                  {deck.name}
-                </option>
-              ))}
-            </select>
-            <input
-              id="deck-url"
-              value={deckUrl}
-              onChange={(event) => setDeckUrl(event.target.value)}
-              placeholder="https://archidekt.com/decks/..."
-            />
-            <button onClick={importUrlToTextbox} disabled={isUrlLoading}>
-              {isUrlLoading ? "Fetching..." : "Load URL"}
-            </button>
-          </div>
-          <label htmlFor="decklist">Decklist</label>
-          <textarea
-            id="decklist"
-            value={deckInput}
-            onChange={(event) => setDeckInput(event.target.value)}
-            spellCheck={false}
-          />
-          <button className="primary-action" onClick={importDeck} disabled={isLoading}>
-            {isLoading ? "Importing..." : "Import from Scryfall"}
-          </button>
-          <p className="status-line">{status}</p>
-        </section>
+          {leftTool === "deck" && (
+            <section className="importer" aria-label="Deck importer">
+              <p className="eyebrow">Deck setup</p>
+              <div className="precon-picker">
+                <label htmlFor="precon">Local precon</label>
+                <select
+                  id="precon"
+                  value={selectedPreconId}
+                  onChange={(event) => choosePrecon(event.target.value)}
+                >
+                  <option value="">Custom / imported deck</option>
+                  {preconDecks.map((deck) => (
+                    <option key={deck.id} value={deck.id}>
+                      {deck.name} - {deck.commander}
+                    </option>
+                  ))}
+                </select>
+                <button onClick={chooseRandomPrecon}>Random precon</button>
+              </div>
+              <div className="url-importer">
+                <label htmlFor="deck-url">Archidekt or Moxfield URL</label>
+                <select
+                  id="archidekt-catalog"
+                  value={selectedCatalogUrl}
+                  onChange={(event) => chooseCatalogDeck(event.target.value)}
+                >
+                  {archidektCatalog.decks.map((deck) => (
+                    <option key={deck.id} value={deck.url}>
+                      {deck.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  id="deck-url"
+                  value={deckUrl}
+                  onChange={(event) => setDeckUrl(event.target.value)}
+                  placeholder="https://archidekt.com/decks/..."
+                />
+                <button onClick={importUrlToTextbox} disabled={isUrlLoading}>
+                  {isUrlLoading ? "Fetching..." : "Load URL"}
+                </button>
+              </div>
+              <label htmlFor="decklist">Decklist</label>
+              <textarea
+                id="decklist"
+                value={deckInput}
+                onChange={(event) => setDeckInput(event.target.value)}
+                spellCheck={false}
+              />
+              <button className="primary-action" onClick={importDeck} disabled={isLoading}>
+                {isLoading ? "Importing..." : "Import from Scryfall"}
+              </button>
+              <p className="status-line">{status}</p>
+            </section>
+          )}
 
-        <section className="quick-controls" aria-label="Game controls">
-          <p className="eyebrow">Table actions</p>
-          <button onClick={() => draw(1)}>Draw 1</button>
-          <button onClick={() => draw(7)}>Draw 7</button>
-          <button onClick={untapAllBattlefield}>Untap all</button>
-          <button onClick={() => scry(1)}>Scry 1</button>
-          <button onClick={() => scry(2)}>Scry 2</button>
-          {libraryView !== "hidden" && <button onClick={closeLibraryReveal}>Done looking</button>}
-          <button
-            onClick={() => {
-              setLibraryView((current) => (current === "search" ? "hidden" : "search"));
-              setScryCount(0);
-              setGame((current) => ({ ...current, activeZone: "library" }));
-            }}
-          >
-            {libraryView === "search" ? "Hide library" : "Search library"}
-          </button>
-          <button onClick={shuffleLibrary}>Shuffle</button>
-        </section>
+          {leftTool === "actions" && (
+            <>
+              <section className="quick-controls" aria-label="Game controls">
+                <p className="eyebrow">Table actions</p>
+                <button onClick={() => draw(1)}>Draw 1</button>
+                <button onClick={() => draw(7)}>Draw 7</button>
+                <button onClick={untapAllBattlefield}>Untap all</button>
+                <button onClick={() => scry(1)}>Scry 1</button>
+                <button onClick={() => scry(2)}>Scry 2</button>
+                {libraryView !== "hidden" && <button onClick={closeLibraryReveal}>Done looking</button>}
+                <button
+                  onClick={() => {
+                    setLibraryView((current) => (current === "search" ? "hidden" : "search"));
+                    setScryCount(0);
+                    setGame((current) => ({ ...current, activeZone: "library" }));
+                  }}
+                >
+                  {libraryView === "search" ? "Hide library" : "Search library"}
+                </button>
+                <button onClick={shuffleLibrary}>Shuffle</button>
+              </section>
 
-        <section className="flex-actions" aria-label="Flexible actions">
-          <p className="eyebrow">Flexible actions</p>
-          <div className="x-controls">
-            <label htmlFor="x-value">X</label>
-            <input
-              id="x-value"
-              type="number"
-              min="0"
-              value={xValue}
-              onChange={(event) => setXValue(sanitizeCount(Number(event.target.value), 1))}
-            />
-            <button onClick={() => draw(xValue)}>Draw X</button>
-            <button onClick={() => scry(xValue)}>Scry X</button>
-          </div>
-          <div className="mulligan-controls">
-            <button onClick={() => mulligan("casual")}>Casual mulligan</button>
-            <button onClick={() => mulligan("penalty")}>Penalty mulligan</button>
-            <span>Penalty: {mulliganPenalty}</span>
-            <button onClick={() => setMulliganPenalty(0)}>Reset penalty</button>
-          </div>
-          <div className="token-controls">
-            <label htmlFor="token-select">Token</label>
-            <select
-              id="token-select"
-              value={tokenName}
-              onChange={(event) => setTokenName(event.target.value)}
-            >
-              {tokenPresets.map((token) => (
-                <option key={token.name} value={token.name}>
-                  {token.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              value={tokenQuantity}
-              onChange={(event) => setTokenQuantity(Math.max(1, sanitizeCount(Number(event.target.value), 1)))}
-              aria-label="Token quantity"
-            />
-            <button onClick={createToken}>To board</button>
-            <button onClick={createTokenInBank}>To bank</button>
-          </div>
-          <div className="spawn-controls">
-            <label htmlFor="spawn-card">Pull up card</label>
-            <input
-              id="spawn-card"
-              value={spawnInput}
-              onChange={(event) => setSpawnInput(event.target.value)}
-              placeholder="Card name or Scryfall URL"
-            />
-            <button onClick={spawnCardToHand} disabled={isSpawnLoading}>
-              To hand
-            </button>
-            <button onClick={spawnCardToBattlefield} disabled={isSpawnLoading}>
-              To board
-            </button>
-          </div>
-        </section>
+              <section className="flex-actions" aria-label="Flexible actions">
+                <p className="eyebrow">Flexible actions</p>
+                <div className="x-controls">
+                  <label htmlFor="x-value">X</label>
+                  <input
+                    id="x-value"
+                    type="number"
+                    min="0"
+                    value={xValue}
+                    onChange={(event) => setXValue(sanitizeCount(Number(event.target.value), 1))}
+                  />
+                  <button onClick={() => draw(xValue)}>Draw X</button>
+                  <button onClick={() => scry(xValue)}>Scry X</button>
+                </div>
+                <div className="mulligan-controls">
+                  <button onClick={() => mulligan("casual")}>Casual mulligan</button>
+                  <button onClick={() => mulligan("penalty")}>Penalty mulligan</button>
+                  <span>Penalty: {mulliganPenalty}</span>
+                  <button onClick={() => setMulliganPenalty(0)}>Reset penalty</button>
+                </div>
+                <div className="token-controls">
+                  <label htmlFor="token-select">Token</label>
+                  <select
+                    id="token-select"
+                    value={tokenName}
+                    onChange={(event) => setTokenName(event.target.value)}
+                  >
+                    {tokenPresets.map((token) => (
+                      <option key={token.name} value={token.name}>
+                        {token.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={tokenQuantity}
+                    onChange={(event) => setTokenQuantity(Math.max(1, sanitizeCount(Number(event.target.value), 1)))}
+                    aria-label="Token quantity"
+                  />
+                  <button onClick={createToken}>To board</button>
+                  <button onClick={createTokenInBank}>To bank</button>
+                </div>
+                <div className="spawn-controls">
+                  <label htmlFor="spawn-card">Pull up card</label>
+                  <input
+                    id="spawn-card"
+                    value={spawnInput}
+                    onChange={(event) => setSpawnInput(event.target.value)}
+                    placeholder="Card name or Scryfall URL"
+                  />
+                  <button onClick={spawnCardToHand} disabled={isSpawnLoading}>
+                    To hand
+                  </button>
+                  <button onClick={spawnCardToBattlefield} disabled={isSpawnLoading}>
+                    To board
+                  </button>
+                </div>
+              </section>
+            </>
+          )}
+        </div>
       </aside>}
+
+      <nav className="mobile-dock" aria-label="Mobile tools">
+        <button
+          className={leftPanelOpen && leftTool === "deck" ? "is-active" : ""}
+          onClick={() => openLeftTool("deck")}
+        >
+          Deck
+        </button>
+        <button
+          className={leftPanelOpen && leftTool === "actions" ? "is-active" : ""}
+          onClick={() => openLeftTool("actions")}
+        >
+          Actions
+        </button>
+        <button
+          className={rightPanelOpen && rightTool === "card" ? "is-active" : ""}
+          onClick={() => openRightTool("card")}
+        >
+          Card
+        </button>
+        <button
+          className={rightPanelOpen && rightTool === "damage" ? "is-active" : ""}
+          onClick={() => openRightTool("damage")}
+        >
+          Damage
+        </button>
+        <button
+          className={rightPanelOpen && rightTool === "chat" ? "is-active" : ""}
+          onClick={() => openRightTool("chat")}
+        >
+          Chat
+        </button>
+      </nav>
 
       <section className="tabletop" aria-label="Play table">
         <header className="table-header">
@@ -1344,14 +1441,43 @@ function App() {
         </div>
       </section>
 
-      {rightPanelOpen && <aside className="inspector">
+      {rightPanelOpen && <aside className={`inspector inspector-${rightTool}`}>
         <div className="panel-titlebar">
           <div>
-            <span>Details & table log</span>
-            <small>Selected card, damage, chat</small>
+            <span>Table info</span>
+            <small>Card, damage, log, chat</small>
           </div>
           <button onClick={() => setRightPanelOpen(false)}>Close</button>
         </div>
+
+        <div className="tool-tabs" role="tablist" aria-label="Table info">
+          <button
+            className={rightTool === "card" ? "is-active" : ""}
+            onClick={() => setRightTool("card")}
+          >
+            Card
+          </button>
+          <button
+            className={rightTool === "damage" ? "is-active" : ""}
+            onClick={() => setRightTool("damage")}
+          >
+            Damage
+          </button>
+          <button
+            className={rightTool === "log" ? "is-active" : ""}
+            onClick={() => setRightTool("log")}
+          >
+            Log
+          </button>
+          <button
+            className={rightTool === "chat" ? "is-active" : ""}
+            onClick={() => setRightTool("chat")}
+          >
+            Chat
+          </button>
+        </div>
+
+        <div className="panel-body">
         <section className="selected-panel" aria-label="Selected card">
           <p className="eyebrow">Selected</p>
           {selectedRemoteCard && selectedRemoteData && selectedRemotePlayer ? (
@@ -1548,6 +1674,7 @@ function App() {
             <p className="empty-note">Join a lobby to chat.</p>
           )}
         </section>
+        </div>
       </aside>}
       {hoverPreview && (
         <div
