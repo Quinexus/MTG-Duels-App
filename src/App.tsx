@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type DragEvent,
   type MouseEvent,
+  type PointerEvent,
   type TouchEvent,
 } from "react";
 import {
@@ -550,6 +551,22 @@ function App() {
     moveCard(selected.instanceId, zone, lane);
   }
 
+  function moveSelectedToFreePoint(event: MouseEvent<HTMLElement>) {
+    if (!isCompactViewport() || !selected || selectedRemote) {
+      return;
+    }
+
+    const board = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - board.left) / board.width) * 100;
+    const y = ((event.clientY - board.top) / board.height) * 100;
+
+    if (selected.zone !== "battlefield") {
+      moveCard(selected.instanceId, "battlefield");
+    }
+
+    moveFreeBattlefieldCard(selected.instanceId, x, y);
+  }
+
   function changeCounter(type: CounterType, delta: number) {
     if (!selected) {
       return;
@@ -776,7 +793,7 @@ function App() {
     faceDown: boolean,
     event: MouseEvent<HTMLElement>,
   ) {
-    if (!data) {
+    if (!data || !canUseHoverPreview()) {
       return;
     }
 
@@ -847,14 +864,16 @@ function App() {
           }
 
           const position = defaultFreePosition(battlefieldIndex);
+          const data = current.cardsById[card.cardId];
           battlefieldIndex += 1;
 
           return {
             ...card,
             battlefieldPosition: position,
+            battlefieldLane: data ? inferLaneFromCardData(data) : card.battlefieldLane,
           };
         }),
-        actions: [createAction("Reset battlefield positions."), ...current.actions],
+        actions: [createAction("Reset battlefield layout."), ...current.actions],
       };
     });
   }
@@ -1388,7 +1407,8 @@ function App() {
 
         <div className="zones-grid">
           <p className="touch-hint">
-            Touch: tap a card, then tap a zone to move it. Double-tap battlefield cards to tap.
+            Touch: tap a card, then tap a zone to move it. In free move, tap the board spot.
+            Double-tap battlefield cards to tap.
           </p>
           {visibleZones.map((zone) => (
             <section
@@ -1431,6 +1451,7 @@ function App() {
                   onFreeMove={moveFreeBattlefieldCard}
                   onDoubleClickCard={toggleTapped}
                   onTapZone={(lane) => moveSelectedByTouch("battlefield", lane)}
+                  onTapFreeBoard={moveSelectedToFreePoint}
                   onSelect={(card) => {
                     setSelectedRemote(undefined);
                     setGame((current) => ({
@@ -1842,6 +1863,7 @@ function BattlefieldZone({
   onFreeMove,
   onDoubleClickCard,
   onTapZone,
+  onTapFreeBoard,
   onSelect,
   onDragStart,
 }: {
@@ -1860,6 +1882,7 @@ function BattlefieldZone({
   onFreeMove: (cardId: string, x: number, y: number) => void;
   onDoubleClickCard: (cardId: string) => void;
   onTapZone: (lane?: BattlefieldLane) => void;
+  onTapFreeBoard: (event: MouseEvent<HTMLElement>) => void;
   onSelect: (card: CardInstance) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
 }) {
@@ -1871,7 +1894,7 @@ function BattlefieldZone({
         onDrop={(event) => onDrop(event, "battlefield")}
         onClick={(event) => {
           event.stopPropagation();
-          onTapZone();
+          onTapFreeBoard(event);
         }}
       >
         {cards.map((card) => (
@@ -1960,6 +1983,70 @@ function FreeBattlefieldCard({
   onMove: (x: number, y: number) => void;
   onDoubleClick: () => void;
 }) {
+  const pointerStartRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const pointerDraggingRef = useRef(false);
+  const suppressClickRef = useRef(false);
+
+  function moveFromPointer(event: PointerEvent<HTMLDivElement>) {
+    const board = event.currentTarget.closest(".battlefield-free");
+    if (!board) {
+      return;
+    }
+
+    const rect = board.getBoundingClientRect();
+    const x = ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 100;
+    const y = ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 100;
+    onMove(x, y);
+  }
+
+  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse") {
+      return;
+    }
+
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    pointerDraggingRef.current = false;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!pointerStartRef.current || event.pointerType === "mouse") {
+      return;
+    }
+
+    const distance = Math.hypot(
+      event.clientX - pointerStartRef.current.x,
+      event.clientY - pointerStartRef.current.y,
+    );
+
+    if (!pointerDraggingRef.current && distance < 8) {
+      return;
+    }
+
+    event.preventDefault();
+    pointerDraggingRef.current = true;
+    suppressClickRef.current = true;
+    moveFromPointer(event);
+  }
+
+  function onPointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (!pointerStartRef.current || event.pointerType === "mouse") {
+      return;
+    }
+
+    if (pointerDraggingRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      moveFromPointer(event);
+    }
+
+    pointerStartRef.current = undefined;
+    pointerDraggingRef.current = false;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   function onDragEnd(event: DragEvent<HTMLButtonElement>) {
     const board = event.currentTarget.closest(".battlefield-free");
     if (!board) {
@@ -1975,6 +2062,22 @@ function FreeBattlefieldCard({
   return (
     <div
       className="free-card-position"
+      onClickCapture={(event) => {
+        if (!suppressClickRef.current) {
+          return;
+        }
+
+        suppressClickRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        pointerStartRef.current = undefined;
+        pointerDraggingRef.current = false;
+      }}
       style={{
         left: `${card.battlefieldPosition.x}%`,
         top: `${card.battlefieldPosition.y}%`,
@@ -2237,6 +2340,7 @@ function CardTile({
   const imageUrl = card.faceDown ? undefined : data?.imageUrl;
   const counters = visibleCounters(card.counters);
   const lastTouchTapRef = useRef(0);
+  const suppressNextClickRef = useRef(false);
 
   function onTouchEnd(event: TouchEvent<HTMLButtonElement>) {
     if (!onDoubleClick) {
@@ -2246,7 +2350,9 @@ function CardTile({
     const now = Date.now();
     if (now - lastTouchTapRef.current < 320) {
       event.preventDefault();
+      event.stopPropagation();
       onDoubleClick();
+      suppressNextClickRef.current = true;
       lastTouchTapRef.current = 0;
       return;
     }
@@ -2261,9 +2367,19 @@ function CardTile({
       } ${compact ? "is-compact" : ""}`}
       onClick={(event) => {
         event.stopPropagation();
+        if (suppressNextClickRef.current) {
+          suppressNextClickRef.current = false;
+          return;
+        }
         onSelect();
       }}
-      onDoubleClick={onDoubleClick}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        if (isCompactViewport()) {
+          return;
+        }
+        onDoubleClick?.();
+      }}
       draggable={!isCompactViewport()}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -2449,6 +2565,13 @@ function clamp(value: number, min: number, max: number) {
 
 function isCompactViewport() {
   return typeof window !== "undefined" && window.matchMedia("(max-width: 860px)").matches;
+}
+
+function canUseHoverPreview() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(hover: hover) and (pointer: fine)").matches
+  );
 }
 
 function inferBattlefieldLane(game: GameState, cardId: string): BattlefieldLane {
