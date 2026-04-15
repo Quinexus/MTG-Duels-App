@@ -1006,6 +1006,10 @@ select:focus {
   touch-action: none;
 }
 
+.battlefield-free .card-tile {
+  width: calc(112px * var(--card-scale, 1));
+}
+
 .card-tile {
   position: relative;
   display: grid;
@@ -1582,6 +1586,10 @@ select:focus {
 
   .zone-battlefield {
     min-height: 360px;
+  }
+
+  .battlefield-free .card-tile {
+    width: calc(86px * var(--card-scale, 1));
   }
 
   .zone-hand {

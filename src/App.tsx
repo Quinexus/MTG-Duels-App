@@ -545,10 +545,12 @@ function App() {
     }
 
     if (selected.zone === zone && selected.battlefieldLane === lane) {
+      setGame((current) => ({ ...current, selectedId: undefined }));
       return;
     }
 
     moveCard(selected.instanceId, zone, lane);
+    setGame((current) => ({ ...current, selectedId: undefined }));
   }
 
   function moveSelectedToFreePoint(event: MouseEvent<HTMLElement>) {
@@ -565,6 +567,15 @@ function App() {
     }
 
     moveFreeBattlefieldCard(selected.instanceId, x, y);
+    setGame((current) => ({ ...current, selectedId: undefined }));
+  }
+
+  function clearTouchSelection() {
+    if (!isCompactViewport()) {
+      return;
+    }
+
+    setGame((current) => ({ ...current, selectedId: undefined }));
   }
 
   function changeCounter(type: CounterType, delta: number) {
@@ -1449,6 +1460,7 @@ function App() {
                   onLeaveCard={() => setHoverPreview(undefined)}
                   onDrop={onDrop}
                   onFreeMove={moveFreeBattlefieldCard}
+                  onFinishFreeMove={clearTouchSelection}
                   onDoubleClickCard={toggleTapped}
                   onTapZone={(lane) => moveSelectedByTouch("battlefield", lane)}
                   onTapFreeBoard={moveSelectedToFreePoint}
@@ -1861,6 +1873,7 @@ function BattlefieldZone({
   onLeaveCard,
   onDrop,
   onFreeMove,
+  onFinishFreeMove,
   onDoubleClickCard,
   onTapZone,
   onTapFreeBoard,
@@ -1880,6 +1893,7 @@ function BattlefieldZone({
     lane?: BattlefieldLane,
   ) => void;
   onFreeMove: (cardId: string, x: number, y: number) => void;
+  onFinishFreeMove: () => void;
   onDoubleClickCard: (cardId: string) => void;
   onTapZone: (lane?: BattlefieldLane) => void;
   onTapFreeBoard: (event: MouseEvent<HTMLElement>) => void;
@@ -1908,6 +1922,7 @@ function BattlefieldZone({
             onHover={(event) => onHoverCard(card, event)}
             onLeave={onLeaveCard}
             onMove={(x, y) => onFreeMove(card.instanceId, x, y)}
+            onMoveEnd={onFinishFreeMove}
             onDoubleClick={() => onDoubleClickCard(card.instanceId)}
           />
         ))}
@@ -1971,6 +1986,7 @@ function FreeBattlefieldCard({
   onLeave,
   onSelect,
   onMove,
+  onMoveEnd,
   onDoubleClick,
 }: {
   card: CardInstance;
@@ -1981,6 +1997,7 @@ function FreeBattlefieldCard({
   onLeave: () => void;
   onSelect: () => void;
   onMove: (x: number, y: number) => void;
+  onMoveEnd: () => void;
   onDoubleClick: () => void;
 }) {
   const pointerStartRef = useRef<{ x: number; y: number } | undefined>(undefined);
@@ -2038,6 +2055,7 @@ function FreeBattlefieldCard({
       event.preventDefault();
       event.stopPropagation();
       moveFromPointer(event);
+      onMoveEnd();
     }
 
     pointerStartRef.current = undefined;
