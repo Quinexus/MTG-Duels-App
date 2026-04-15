@@ -1,0 +1,366 @@
+{
+  "source": "https://archidekt.com/commander-precons",
+  "updatedAt": "2026-04-15T10:21:43.710Z",
+  "decks": [
+    {
+      "id": "21319716",
+      "slug": "quandrix_unlimited_secrets_of_strixhaven",
+      "url": "https://archidekt.com/decks/21319716/quandrix_unlimited_secrets_of_strixhaven",
+      "name": "Quandrix Unlimited Secrets Of Strixhaven"
+    },
+    {
+      "id": "21319521",
+      "slug": "witherbloom_pestilence_secrets_of_strixhaven",
+      "url": "https://archidekt.com/decks/21319521/witherbloom_pestilence_secrets_of_strixhaven",
+      "name": "Witherbloom Pestilence Secrets Of Strixhaven"
+    },
+    {
+      "id": "21319610",
+      "slug": "lorehold_spirit_secrets_of_strixhaven",
+      "url": "https://archidekt.com/decks/21319610/lorehold_spirit_secrets_of_strixhaven",
+      "name": "Lorehold Spirit Secrets Of Strixhaven"
+    },
+    {
+      "id": "21319431",
+      "slug": "prismari_artistry_secrets_of_strixhaven",
+      "url": "https://archidekt.com/decks/21319431/prismari_artistry_secrets_of_strixhaven",
+      "name": "Prismari Artistry Secrets Of Strixhaven"
+    },
+    {
+      "id": "21319304",
+      "slug": "silverquill_influence_secrets_of_strixhaven",
+      "url": "https://archidekt.com/decks/21319304/silverquill_influence_secrets_of_strixhaven",
+      "name": "Silverquill Influence Secrets Of Strixhaven"
+    },
+    {
+      "id": "20105223",
+      "slug": "turtle_power_teenage_mutant_ninja_turtles_commander_deck",
+      "url": "https://archidekt.com/decks/20105223/turtle_power_teenage_mutant_ninja_turtles_commander_deck",
+      "name": "Turtle Power Teenage Mutant Ninja Turtles Commander Deck"
+    },
+    {
+      "id": "18744715",
+      "slug": "blight_curse_lorwyn_eclipsed_commander_deck",
+      "url": "https://archidekt.com/decks/18744715/blight_curse_lorwyn_eclipsed_commander_deck",
+      "name": "Blight Curse Lorwyn Eclipsed Commander Deck"
+    },
+    {
+      "id": "18744843",
+      "slug": "dance_of_the_elements_lorwyn_eclipsed_commander_deck",
+      "url": "https://archidekt.com/decks/18744843/dance_of_the_elements_lorwyn_eclipsed_commander_deck",
+      "name": "Dance Of The Elements Lorwyn Eclipsed Commander Deck"
+    },
+    {
+      "id": "14420275",
+      "slug": "counter_intelligence_edge_of_eternities_commander_deck",
+      "url": "https://archidekt.com/decks/14420275/counter_intelligence_edge_of_eternities_commander_deck",
+      "name": "Counter Intelligence Edge Of Eternities Commander Deck"
+    },
+    {
+      "id": "14397447",
+      "slug": "world_shaper_edge_of_eternities_commander_deck",
+      "url": "https://archidekt.com/decks/14397447/world_shaper_edge_of_eternities_commander_deck",
+      "name": "World Shaper Edge Of Eternities Commander Deck"
+    },
+    {
+      "id": "13693093",
+      "slug": "everyones_invited_secret_lair_drop_wubrg_edh_precon_decklist",
+      "url": "https://archidekt.com/decks/13693093/everyones_invited_secret_lair_drop_wubrg_edh_precon_decklist",
+      "name": "Everyones Invited Secret Lair Drop Wubrg Edh Precon Decklist"
+    },
+    {
+      "id": "13106730",
+      "slug": "revival_trance_final_fantasy_commander",
+      "url": "https://archidekt.com/decks/13106730/revival_trance_final_fantasy_commander",
+      "name": "Revival Trance Final Fantasy Commander"
+    },
+    {
+      "id": "13106990",
+      "slug": "limit_break_final_fantasy_commander",
+      "url": "https://archidekt.com/decks/13106990/limit_break_final_fantasy_commander",
+      "name": "Limit Break Final Fantasy Commander"
+    },
+    {
+      "id": "13107079",
+      "slug": "counter_blitz_final_fantasy_commander",
+      "url": "https://archidekt.com/decks/13107079/counter_blitz_final_fantasy_commander",
+      "name": "Counter Blitz Final Fantasy Commander"
+    },
+    {
+      "id": "13107116",
+      "slug": "scions_spellcraft_final_fantasy_commander",
+      "url": "https://archidekt.com/decks/13107116/scions_spellcraft_final_fantasy_commander",
+      "name": "Scions Spellcraft Final Fantasy Commander"
+    },
+    {
+      "id": "12002085",
+      "slug": "jeskai_striker_tarkir_dragonstorm_commander",
+      "url": "https://archidekt.com/decks/12002085/jeskai_striker_tarkir_dragonstorm_commander",
+      "name": "Jeskai Striker Tarkir Dragonstorm Commander"
+    },
+    {
+      "id": "12124776",
+      "slug": "abzan_armor_tarkir_dragonstorm_commander",
+      "url": "https://archidekt.com/decks/12124776/abzan_armor_tarkir_dragonstorm_commander",
+      "name": "Abzan Armor Tarkir Dragonstorm Commander"
+    },
+    {
+      "id": "12124803",
+      "slug": "temur_roar_tarkir_dragonstorm_commander",
+      "url": "https://archidekt.com/decks/12124803/temur_roar_tarkir_dragonstorm_commander",
+      "name": "Temur Roar Tarkir Dragonstorm Commander"
+    },
+    {
+      "id": "12028998",
+      "slug": "sultai_arisen_tarkir_dragonstorm_commander",
+      "url": "https://archidekt.com/decks/12028998/sultai_arisen_tarkir_dragonstorm_commander",
+      "name": "Sultai Arisen Tarkir Dragonstorm Commander"
+    },
+    {
+      "id": "12020252",
+      "slug": "mardu_surge_tarkir_dragonstorm_commander",
+      "url": "https://archidekt.com/decks/12020252/mardu_surge_tarkir_dragonstorm_commander",
+      "name": "Mardu Surge Tarkir Dragonstorm Commander"
+    },
+    {
+      "id": "11054763",
+      "slug": "eternal_might_aetherdrift_commander",
+      "url": "https://archidekt.com/decks/11054763/eternal_might_aetherdrift_commander",
+      "name": "Eternal Might Aetherdrift Commander"
+    },
+    {
+      "id": "11035094",
+      "slug": "living_energy_aetherdrift_commander",
+      "url": "https://archidekt.com/decks/11035094/living_energy_aetherdrift_commander",
+      "name": "Living Energy Aetherdrift Commander"
+    },
+    {
+      "id": "9166525",
+      "slug": "miracle_worker_duskmourn_house_of_horror_commander",
+      "url": "https://archidekt.com/decks/9166525/miracle_worker_duskmourn_house_of_horror_commander",
+      "name": "Miracle Worker Duskmourn House Of Horror Commander"
+    },
+    {
+      "id": "9189676",
+      "slug": "death_toll_duskmourn_house_of_horror_commander",
+      "url": "https://archidekt.com/decks/9189676/death_toll_duskmourn_house_of_horror_commander",
+      "name": "Death Toll Duskmourn House Of Horror Commander"
+    },
+    {
+      "id": "9189744",
+      "slug": "endless_punishment_duskmourn_house_of_horror_commander",
+      "url": "https://archidekt.com/decks/9189744/endless_punishment_duskmourn_house_of_horror_commander",
+      "name": "Endless Punishment Duskmourn House Of Horror Commander"
+    },
+    {
+      "id": "9150668",
+      "slug": "jump_scare_duskmourn_house_of_horror_commander",
+      "url": "https://archidekt.com/decks/9150668/jump_scare_duskmourn_house_of_horror_commander",
+      "name": "Jump Scare Duskmourn House Of Horror Commander"
+    },
+    {
+      "id": "8460543",
+      "slug": "family_matters_bloomburrow_commander",
+      "url": "https://archidekt.com/decks/8460543/family_matters_bloomburrow_commander",
+      "name": "Family Matters Bloomburrow Commander"
+    },
+    {
+      "id": "8460469",
+      "slug": "peace_offering_bloomburrow_commander",
+      "url": "https://archidekt.com/decks/8460469/peace_offering_bloomburrow_commander",
+      "name": "Peace Offering Bloomburrow Commander"
+    },
+    {
+      "id": "8497473",
+      "slug": "animated_army_bloomburrow_commander",
+      "url": "https://archidekt.com/decks/8497473/animated_army_bloomburrow_commander",
+      "name": "Animated Army Bloomburrow Commander"
+    },
+    {
+      "id": "8460587",
+      "slug": "squirreled_away_bloomburrow_commander",
+      "url": "https://archidekt.com/decks/8460587/squirreled_away_bloomburrow_commander",
+      "name": "Squirreled Away Bloomburrow Commander"
+    },
+    {
+      "id": "7869831",
+      "slug": "graveyard_overdrive_modern_horizons_3_commander",
+      "url": "https://archidekt.com/decks/7869831/graveyard_overdrive_modern_horizons_3_commander",
+      "name": "Graveyard Overdrive Modern Horizons 3 Commander"
+    },
+    {
+      "id": "7858224",
+      "slug": "creative_energy_modern_horizons_3_commander",
+      "url": "https://archidekt.com/decks/7858224/creative_energy_modern_horizons_3_commander",
+      "name": "Creative Energy Modern Horizons 3 Commander"
+    },
+    {
+      "id": "7858153",
+      "slug": "tricky_terrain_modern_horizons_3_commander",
+      "url": "https://archidekt.com/decks/7858153/tricky_terrain_modern_horizons_3_commander",
+      "name": "Tricky Terrain Modern Horizons 3 Commander"
+    },
+    {
+      "id": "7858209",
+      "slug": "eldrazi_incursion_modern_horizons_3_commander",
+      "url": "https://archidekt.com/decks/7858209/eldrazi_incursion_modern_horizons_3_commander",
+      "name": "Eldrazi Incursion Modern Horizons 3 Commander"
+    },
+    {
+      "id": "7261488",
+      "slug": "most_wanted_outlaws_of_thunder_junction_commander",
+      "url": "https://archidekt.com/decks/7261488/most_wanted_outlaws_of_thunder_junction_commander",
+      "name": "Most Wanted Outlaws Of Thunder Junction Commander"
+    },
+    {
+      "id": "7261455",
+      "slug": "grand_larceny_outlaws_of_thunder_junction_commander",
+      "url": "https://archidekt.com/decks/7261455/grand_larceny_outlaws_of_thunder_junction_commander",
+      "name": "Grand Larceny Outlaws Of Thunder Junction Commander"
+    },
+    {
+      "id": "7261435",
+      "slug": "quick_draw_outlaws_of_thunder_junction_commander",
+      "url": "https://archidekt.com/decks/7261435/quick_draw_outlaws_of_thunder_junction_commander",
+      "name": "Quick Draw Outlaws Of Thunder Junction Commander"
+    },
+    {
+      "id": "7261423",
+      "slug": "desert_bloom_outlaws_of_thunder_junction_commander",
+      "url": "https://archidekt.com/decks/7261423/desert_bloom_outlaws_of_thunder_junction_commander",
+      "name": "Desert Bloom Outlaws Of Thunder Junction Commander"
+    },
+    {
+      "id": "6810925",
+      "slug": "scrappy_survivors_fallout",
+      "url": "https://archidekt.com/decks/6810925/scrappy_survivors_fallout",
+      "name": "Scrappy Survivors Fallout"
+    },
+    {
+      "id": "6846971",
+      "slug": "science_fallout",
+      "url": "https://archidekt.com/decks/6846971/science_fallout",
+      "name": "Science Fallout"
+    },
+    {
+      "id": "6834477",
+      "slug": "mutant_menace_fallout",
+      "url": "https://archidekt.com/decks/6834477/mutant_menace_fallout",
+      "name": "Mutant Menace Fallout"
+    },
+    {
+      "id": "6821707",
+      "slug": "hail_caesar_fallout",
+      "url": "https://archidekt.com/decks/6821707/hail_caesar_fallout",
+      "name": "Hail Caesar Fallout"
+    },
+    {
+      "id": "6584319",
+      "slug": "raining_cats_and_dogs_secret_lair_drop",
+      "url": "https://archidekt.com/decks/6584319/raining_cats_and_dogs_secret_lair_drop",
+      "name": "Raining Cats And Dogs Secret Lair Drop"
+    },
+    {
+      "id": "6527467",
+      "slug": "deadly_disguise_murders_at_karlov_manor_commander",
+      "url": "https://archidekt.com/decks/6527467/deadly_disguise_murders_at_karlov_manor_commander",
+      "name": "Deadly Disguise Murders At Karlov Manor Commander"
+    },
+    {
+      "id": "6527454",
+      "slug": "revenant_recon_murders_at_karlov_manor_commander",
+      "url": "https://archidekt.com/decks/6527454/revenant_recon_murders_at_karlov_manor_commander",
+      "name": "Revenant Recon Murders At Karlov Manor Commander"
+    },
+    {
+      "id": "6527442",
+      "slug": "deep_clue_sea_murders_at_karlov_manor_commander",
+      "url": "https://archidekt.com/decks/6527442/deep_clue_sea_murders_at_karlov_manor_commander",
+      "name": "Deep Clue Sea Murders At Karlov Manor Commander"
+    },
+    {
+      "id": "6527429",
+      "slug": "blame_game_murders_at_karlov_manor_commander",
+      "url": "https://archidekt.com/decks/6527429/blame_game_murders_at_karlov_manor_commander",
+      "name": "Blame Game Murders At Karlov Manor Commander"
+    },
+    {
+      "id": "4948515",
+      "slug": "sliver_swarm_commander_masters",
+      "url": "https://archidekt.com/decks/4948515/sliver_swarm_commander_masters",
+      "name": "Sliver Swarm Commander Masters"
+    },
+    {
+      "id": "4973732",
+      "slug": "eldrazi_unbound_commander_masters",
+      "url": "https://archidekt.com/decks/4973732/eldrazi_unbound_commander_masters",
+      "name": "Eldrazi Unbound Commander Masters"
+    },
+    {
+      "id": "4956666",
+      "slug": "planeswalker_party_commander_masters",
+      "url": "https://archidekt.com/decks/4956666/planeswalker_party_commander_masters",
+      "name": "Planeswalker Party Commander Masters"
+    },
+    {
+      "id": "4959133",
+      "slug": "enduring_enchantments_commander_masters",
+      "url": "https://archidekt.com/decks/4959133/enduring_enchantments_commander_masters",
+      "name": "Enduring Enchantments Commander Masters"
+    },
+    {
+      "id": "5775210",
+      "slug": "ahoy_mateys_the_lost_caverns_of_ixalan_commander",
+      "url": "https://archidekt.com/decks/5775210/ahoy_mateys_the_lost_caverns_of_ixalan_commander",
+      "name": "Ahoy Mateys The Lost Caverns Of Ixalan Commander"
+    },
+    {
+      "id": "5775250",
+      "slug": "velociramptor_the_lost_caverns_of_ixalan_commander",
+      "url": "https://archidekt.com/decks/5775250/velociramptor_the_lost_caverns_of_ixalan_commander",
+      "name": "Velociramptor The Lost Caverns Of Ixalan Commander"
+    },
+    {
+      "id": "5775230",
+      "slug": "explorers_of_the_deep_the_lost_caverns_of_ixalan_commander",
+      "url": "https://archidekt.com/decks/5775230/explorers_of_the_deep_the_lost_caverns_of_ixalan_commander",
+      "name": "Explorers Of The Deep The Lost Caverns Of Ixalan Commander"
+    },
+    {
+      "id": "5775225",
+      "slug": "blood_rites_the_lost_caverns_of_ixalan_commander",
+      "url": "https://archidekt.com/decks/5775225/blood_rites_the_lost_caverns_of_ixalan_commander",
+      "name": "Blood Rites The Lost Caverns Of Ixalan Commander"
+    },
+    {
+      "id": "5644579",
+      "slug": "timeywimey_doctor_who",
+      "url": "https://archidekt.com/decks/5644579/timeywimey_doctor_who",
+      "name": "Timeywimey Doctor Who"
+    },
+    {
+      "id": "5644511",
+      "slug": "paradox_power_doctor_who",
+      "url": "https://archidekt.com/decks/5644511/paradox_power_doctor_who",
+      "name": "Paradox Power Doctor Who"
+    },
+    {
+      "id": "5644431",
+      "slug": "masters_of_evil_doctor_who",
+      "url": "https://archidekt.com/decks/5644431/masters_of_evil_doctor_who",
+      "name": "Masters Of Evil Doctor Who"
+    },
+    {
+      "id": "5644280",
+      "slug": "blast_from_the_past_doctor_who",
+      "url": "https://archidekt.com/decks/5644280/blast_from_the_past_doctor_who",
+      "name": "Blast From The Past Doctor Who"
+    },
+    {
+      "id": "5226431",
+      "slug": "fae_dominion_wilds_of_eldraine_commander",
+      "url": "https://archidekt.com/decks/5226431/fae_dominion_wilds_of_eldraine_commander",
+      "name": "Fae Dominion Wilds Of Eldraine Commander"
+    }
+  ]
+}
