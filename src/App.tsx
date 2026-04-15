@@ -114,6 +114,7 @@ const initialState: GameState = {
   actions: [],
   battlefieldLayout: "lanes",
   commanderDamage: {},
+  commanderTax: 0,
 };
 
 type LeftTool = "room" | "deck" | "actions";
@@ -156,11 +157,14 @@ function App() {
   const [cardScale, setCardScale] = useState(1);
   const [hoverPreview, setHoverPreview] = useState<{
     card: CardData;
+    imageUrl?: string;
     x: number;
     y: number;
     faceDown?: boolean;
   }>();
   const [xValue, setXValue] = useState(3);
+  const [diceSides, setDiceSides] = useState(20);
+  const [latestRoll, setLatestRoll] = useState<{ sides: number; result: number }>();
   const [mulliganPenalty, setMulliganPenalty] = useState(0);
   const [tokenName, setTokenName] = useState(tokenPresets[0].name);
   const [tokenQuantity, setTokenQuantity] = useState(1);
@@ -559,8 +563,10 @@ function App() {
     }
 
     const board = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - board.left) / board.width) * 100;
-    const y = ((event.clientY - board.top) / board.height) * 100;
+    const cardWidth = 86 * cardScale;
+    const cardHeight = cardWidth / 0.714;
+    const x = ((event.clientX - board.left - cardWidth / 2) / board.width) * 100;
+    const y = ((event.clientY - board.top - cardHeight / 2) / board.height) * 100;
 
     if (selected.zone !== "battlefield") {
       moveCard(selected.instanceId, "battlefield");
@@ -610,12 +616,13 @@ function App() {
         return current;
       }
 
-      return updateCards(
+      const next = updateCards(
         current,
         [cardId],
         { tapped: !target.tapped },
         `${target.tapped ? "Untapped" : "Tapped"} ${target.name}.`,
       );
+      return isCompactViewport() ? { ...next, selectedId: undefined } : next;
     });
   }
 
@@ -670,8 +677,10 @@ function App() {
       tapped: false,
       counters: {},
       faceDown: false,
+      displayBack: false,
       isToken: true,
       isGenerated: true,
+      originalZone: zone === "tokenBank" ? ("tokenBank" as const) : undefined,
       battlefieldLane: inferTokenLane(tokenCard),
       battlefieldPosition: defaultFreePosition(existingBattlefieldCount + index),
     }));
@@ -724,8 +733,10 @@ function App() {
         tapped: false,
         counters: {},
         faceDown: false,
+        displayBack: false,
         isToken: false,
         isGenerated: true,
+        originalZone: undefined,
         battlefieldLane: zone === "battlefield" ? inferLaneFromCardData(card) : "noncreatures",
         battlefieldPosition: defaultFreePosition(
           gameRef.current.instances.filter((item) => item.zone === "battlefield").length,
@@ -788,7 +799,7 @@ function App() {
     data: CardData | undefined,
     event: MouseEvent<HTMLElement>,
   ) {
-    showPreview(data, card.faceDown, event);
+    showPreview(data, card, event);
   }
 
   function showRemoteCardPreview(
@@ -796,12 +807,12 @@ function App() {
     data: CardData | undefined,
     event: MouseEvent<HTMLElement>,
   ) {
-    showPreview(data, card.faceDown, event);
+    showPreview(data, card, event);
   }
 
   function showPreview(
     data: CardData | undefined,
-    faceDown: boolean,
+    card: Pick<CardInstance, "faceDown" | "displayBack">,
     event: MouseEvent<HTMLElement>,
   ) {
     if (!data || !canUseHoverPreview()) {
@@ -822,9 +833,10 @@ function App() {
 
     setHoverPreview({
       card: data,
+      imageUrl: cardDisplayImage(data, card),
       x: clamp(x, 8, Math.max(8, window.innerWidth - previewWidth - 8)),
       y: clamp(y, 8, Math.max(8, window.innerHeight - previewHeight - 8)),
-      faceDown,
+      faceDown: card.faceDown,
     });
   }
 
@@ -863,28 +875,78 @@ function App() {
     }));
   }
 
+  function rollDie(sides: number) {
+    const cleanSides = Math.max(2, sanitizeCount(sides, 20));
+    const result = Math.floor(Math.random() * cleanSides) + 1;
+    setDiceSides(cleanSides);
+    setLatestRoll({ sides: cleanSides, result });
+    setGame((current) => ({
+      ...current,
+      actions: [createAction(`Rolled d${cleanSides}: ${result}.`), ...current.actions],
+    }));
+  }
+
+  function changeCommanderTax(delta: number) {
+    setGame((current) => ({
+      ...current,
+      commanderTax: Math.max(0, current.commanderTax + delta),
+      actions: [
+        createAction(`Commander tax is now +${Math.max(0, current.commanderTax + delta)}.`),
+        ...current.actions,
+      ],
+    }));
+  }
+
   function resetBoardPositions() {
+    setLibraryView("hidden");
+    setScryCount(0);
+    setMulliganPenalty(0);
     setGame((current) => {
-      let battlefieldIndex = 0;
+      const resetCards = current.instances.flatMap((card) => {
+        const originalZone = getOriginalZone(card);
+        if (!originalZone) {
+          return [];
+        }
+
+        const data = current.cardsById[card.cardId];
+        return [
+          {
+            ...card,
+            zone: originalZone,
+            tapped: false,
+            counters: {},
+            faceDown: false,
+            displayBack: false,
+            battlefieldLane: data ? inferLaneFromCardData(data) : card.battlefieldLane,
+            battlefieldPosition: defaultFreePosition(0),
+          },
+        ];
+      });
+      let boardIndex = 0;
+      const positionedCards = resetCards.map((card) => {
+        if (card.zone !== "battlefield") {
+          return card;
+        }
+
+        const position = defaultFreePosition(boardIndex);
+        boardIndex += 1;
+        return { ...card, battlefieldPosition: position };
+      });
+      const library = shuffleCards(positionedCards.filter((card) => card.zone === "library"));
+      const others = positionedCards.filter((card) => card.zone !== "library");
 
       return {
         ...current,
-        instances: current.instances.map((card) => {
-          if (card.zone !== "battlefield") {
-            return card;
-          }
-
-          const position = defaultFreePosition(battlefieldIndex);
-          const data = current.cardsById[card.cardId];
-          battlefieldIndex += 1;
-
-          return {
-            ...card,
-            battlefieldPosition: position,
-            battlefieldLane: data ? inferLaneFromCardData(data) : card.battlefieldLane,
-          };
-        }),
-        actions: [createAction("Reset battlefield layout."), ...current.actions],
+        instances: [...library, ...others],
+        life: 40,
+        poison: 0,
+        energy: 0,
+        turn: 1,
+        activeZone: "hand",
+        selectedId: undefined,
+        commanderDamage: {},
+        commanderTax: 0,
+        actions: [createAction("Reset game: deck returned to starting zones."), ...current.actions],
       };
     });
   }
@@ -1230,6 +1292,20 @@ function App() {
                   <button onClick={() => draw(xValue)}>Draw X</button>
                   <button onClick={() => scry(xValue)}>Scry X</button>
                 </div>
+                <div className="dice-controls" aria-label="Dice roller">
+                  <span>Roll</span>
+                  <button onClick={() => rollDie(6)}>d6</button>
+                  <button onClick={() => rollDie(20)}>d20</button>
+                  <input
+                    type="number"
+                    min="2"
+                    value={diceSides}
+                    onChange={(event) => setDiceSides(sanitizeCount(Number(event.target.value), 20))}
+                    aria-label="Custom die sides"
+                  />
+                  <button onClick={() => rollDie(diceSides)}>Roll custom</button>
+                  <strong>{latestRoll ? `d${latestRoll.sides}: ${latestRoll.result}` : "No roll yet"}</strong>
+                </div>
                 <div className="mulligan-controls">
                   <button onClick={() => mulligan("casual")}>Casual mulligan</button>
                   <button onClick={() => mulligan("penalty")}>Penalty mulligan</button>
@@ -1381,7 +1457,7 @@ function App() {
             </button>
           </div>
           <button className="reset-board-button" onClick={resetBoardPositions}>
-            Reset board
+            Reset game
           </button>
         </section>
 
@@ -1426,7 +1502,7 @@ function App() {
               key={zone.id}
               className={`zone zone-${zone.id} ${
                 game.activeZone === zone.id ? "is-active" : ""
-              }`}
+              } ${zone.id === "battlefield" && game.battlefieldLayout === "free" ? "is-free-mode" : ""}`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => onDrop(event, zone.id)}
               onClick={() => {
@@ -1434,20 +1510,59 @@ function App() {
                 moveSelectedByTouch(zone.id);
               }}
             >
-              <button
-                className="zone-heading"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setGame((current) => ({ ...current, activeZone: zone.id }))
-                  moveSelectedByTouch(zone.id);
-                }}
-              >
-                <span>
-                  <strong>{zone.label}</strong>
-                  <small>{zone.helper}</small>
-                </span>
-                <b>{zone.cards.length}</b>
-              </button>
+              {zone.id === "command" ? (
+                <div className="zone-heading command-heading">
+                  <button
+                    className="command-heading-title"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setGame((current) => ({ ...current, activeZone: zone.id }))
+                      moveSelectedByTouch(zone.id);
+                    }}
+                  >
+                    <span>
+                      <strong>{zone.label}</strong>
+                      <small>{zone.helper}</small>
+                    </span>
+                  </button>
+                  <div className="commander-tax-controls" aria-label="Commander tax">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        changeCommanderTax(-2);
+                      }}
+                    >
+                      -
+                    </button>
+                    <b title={`Commander tax is +2 for each previous cast from command. ${zone.cards.length} card${zone.cards.length === 1 ? "" : "s"} in command zone.`}>
+                      +{game.commanderTax}
+                    </b>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        changeCommanderTax(2);
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="zone-heading"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setGame((current) => ({ ...current, activeZone: zone.id }))
+                    moveSelectedByTouch(zone.id);
+                  }}
+                >
+                  <span>
+                    <strong>{zone.label}</strong>
+                    <small>{zone.helper}</small>
+                  </span>
+                  <b>{zone.cards.length}</b>
+                </button>
+              )}
 
               {zone.id === "battlefield" ? (
                 <BattlefieldZone
@@ -1549,8 +1664,8 @@ function App() {
           {selectedRemoteCard && selectedRemoteData && selectedRemotePlayer ? (
             <>
               <div className="selected-preview">
-                {selectedRemoteData.imageUrl && !selectedRemoteCard.faceDown ? (
-                  <img src={selectedRemoteData.imageUrl} alt={selectedRemoteData.name} />
+                {cardDisplayImage(selectedRemoteData, selectedRemoteCard) ? (
+                  <img src={cardDisplayImage(selectedRemoteData, selectedRemoteCard)} alt={selectedRemoteData.name} />
                 ) : (
                   <div className="card-back">MTG</div>
                 )}
@@ -1576,8 +1691,8 @@ function App() {
           ) : selected && selectedData ? (
             <>
               <div className="selected-preview">
-                {selectedData.imageUrl && !selected.faceDown ? (
-                  <img src={selectedData.imageUrl} alt={selectedData.name} />
+                {cardDisplayImage(selectedData, selected) ? (
+                  <img src={cardDisplayImage(selectedData, selected)} alt={selectedData.name} />
                 ) : (
                   <div className="card-back">MTG</div>
                 )}
@@ -1611,13 +1726,25 @@ function App() {
                 <button
                   onClick={() =>
                     updateSelected(
-                      { faceDown: !selected.faceDown },
+                      { faceDown: !selected.faceDown, displayBack: false },
                       `${selected.faceDown ? "Revealed" : "Turned face down"} ${selected.name}.`,
                     )
                   }
                 >
                   {selected.faceDown ? "Reveal" : "Face down"}
                 </button>
+                {selectedData.backImageUrl && (
+                  <button
+                    onClick={() =>
+                      updateSelected(
+                        { displayBack: !selected.displayBack, faceDown: false },
+                        `${selected.displayBack ? "Showed front of" : "Showed other side of"} ${selected.name}.`,
+                      )
+                    }
+                  >
+                    {selected.displayBack ? "Front side" : "Other side"}
+                  </button>
+                )}
                 {(selected.isToken || selected.isGenerated) && (
                   <button className="danger-action" onClick={removeSelectedToken}>
                     Remove card
@@ -1750,8 +1877,8 @@ function App() {
             top: hoverPreview.y,
           }}
         >
-          {hoverPreview.card.imageUrl && !hoverPreview.faceDown ? (
-            <img src={hoverPreview.card.imageUrl} alt={hoverPreview.card.name} />
+          {hoverPreview.imageUrl && !hoverPreview.faceDown ? (
+            <img src={hoverPreview.imageUrl} alt={hoverPreview.card.name} />
           ) : (
             <div className="card-back">MTG</div>
           )}
@@ -2237,7 +2364,7 @@ function RemoteZone({
       <div>
         {cards.map((card) => {
           const data = cardsById[card.cardId];
-          const imageUrl = card.faceDown ? undefined : data?.imageUrl;
+          const imageUrl = cardDisplayImage(data, card);
           const counters = visibleCounters(card.counters);
 
           return (
@@ -2292,7 +2419,7 @@ function RemoteFreeBattlefield({
       <div>
         {cards.map((card) => {
           const data = cardsById[card.cardId];
-          const imageUrl = card.faceDown ? undefined : data?.imageUrl;
+          const imageUrl = cardDisplayImage(data, card);
           const counters = visibleCounters(card.counters);
 
           return (
@@ -2355,7 +2482,7 @@ function CardTile({
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void;
 }) {
-  const imageUrl = card.faceDown ? undefined : data?.imageUrl;
+  const imageUrl = cardDisplayImage(data, card);
   const counters = visibleCounters(card.counters);
   const lastTouchTapRef = useRef(0);
   const suppressNextClickRef = useRef(false);
@@ -2477,8 +2604,10 @@ function buildPublicState(
       tapped: card.tapped,
       counters: card.counters,
       faceDown: card.faceDown,
+      displayBack: card.displayBack,
       isToken: card.isToken,
       isGenerated: card.isGenerated,
+      originalZone: card.originalZone,
       battlefieldLane: card.battlefieldLane,
       battlefieldPosition: card.battlefieldPosition,
     }));
@@ -2513,6 +2642,37 @@ function createZoneCounts(cards: CardInstance[]): Record<ZoneId, number> {
     counts[card.zone] += 1;
   });
   return counts;
+}
+
+function cardDisplayImage(
+  data: CardData | undefined,
+  card: Pick<CardInstance, "faceDown" | "displayBack">,
+) {
+  if (!data || card.faceDown) {
+    return undefined;
+  }
+
+  return card.displayBack ? data.backImageUrl ?? data.imageUrl : data.imageUrl;
+}
+
+function getOriginalZone(card: CardInstance): ZoneId | undefined {
+  if (card.originalZone) {
+    return card.originalZone;
+  }
+
+  if (card.isGenerated) {
+    return card.isToken && card.zone === "tokenBank" ? "tokenBank" : undefined;
+  }
+
+  if (card.instanceId.includes("-commander-")) {
+    return "command";
+  }
+
+  if (card.instanceId.includes("-sideboard-")) {
+    return "sideboard";
+  }
+
+  return "library";
 }
 
 function buildTokenBankForDeck(cardsById: Record<string, CardData>, offset: number) {
@@ -2556,8 +2716,10 @@ function buildTokenBankForDeck(cardsById: Record<string, CardData>, offset: numb
       tapped: false,
       counters: {},
       faceDown: false,
+      displayBack: false,
       isToken: true,
       isGenerated: true,
+      originalZone: "tokenBank" as const,
       battlefieldLane: inferTokenLane(card),
       battlefieldPosition: defaultFreePosition(offset + index),
     };

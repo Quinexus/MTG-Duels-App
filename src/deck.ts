@@ -120,18 +120,21 @@ export function buildInstances(
     if (!card) {
       return [];
     }
+    const zone = zoneForSection(line.section);
 
     return Array.from({ length: line.quantity }, (_, index) => ({
       instanceId: `${card.id}-${line.section}-${index}-${crypto.randomUUID()}`,
       cardId: card.id,
       name: card.name,
-      zone: zoneForSection(line.section),
+      zone,
       owner: "you" as const,
       tapped: false,
       counters: {},
       faceDown: false,
+      displayBack: false,
       isToken: false,
       isGenerated: false,
+      originalZone: zone,
       battlefieldLane: "noncreatures" as const,
       battlefieldPosition: { x: 8, y: 8 },
     }));

@@ -45,8 +45,10 @@ export type CardInstance = {
   tapped: boolean;
   counters: CounterMap;
   faceDown: boolean;
+  displayBack?: boolean;
   isToken: boolean;
   isGenerated: boolean;
+  originalZone?: ZoneId;
   battlefieldLane: BattlefieldLane;
   battlefieldPosition: {
     x: number;
@@ -80,6 +82,7 @@ export type GameState = {
   actions: GameAction[];
   battlefieldLayout: BattlefieldLayout;
   commanderDamage: Record<string, number>;
+  commanderTax: number;
 };
 
 export type PublicCard = {
@@ -90,8 +93,10 @@ export type PublicCard = {
   tapped: boolean;
   counters: CounterMap;
   faceDown: boolean;
+  displayBack?: boolean;
   isToken: boolean;
   isGenerated: boolean;
+  originalZone?: ZoneId;
   battlefieldLane: BattlefieldLane;
   battlefieldPosition: {
     x: number;
