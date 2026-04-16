@@ -136,6 +136,7 @@ export function buildInstances(
       isGenerated: false,
       originalZone: zone,
       battlefieldLane: "noncreatures" as const,
+      battlefieldOrder: index,
       battlefieldPosition: { x: 8, y: 8 },
     }));
   });

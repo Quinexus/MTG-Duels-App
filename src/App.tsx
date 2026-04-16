@@ -528,6 +528,14 @@ function App() {
             zone === "battlefield"
               ? lane ?? inferBattlefieldLane(current, cardId)
               : undefined,
+          battlefieldOrder:
+            zone === "battlefield"
+              ? nextBattlefieldOrder(
+                  current,
+                  lane ?? inferBattlefieldLane(current, cardId),
+                  cardId,
+                )
+              : undefined,
           battlefieldPosition:
             zone === "battlefield"
               ? defaultFreePosition(current.instances.filter((card) => card.zone === "battlefield").length)
@@ -683,6 +691,10 @@ function App() {
       isGenerated: true,
       originalZone: zone === "tokenBank" ? ("tokenBank" as const) : undefined,
       battlefieldLane: inferTokenLane(tokenCard),
+      battlefieldOrder:
+        zone === "battlefield"
+          ? existingBattlefieldCount + index
+          : undefined,
       battlefieldPosition: defaultFreePosition(existingBattlefieldCount + index),
     }));
 
@@ -739,6 +751,10 @@ function App() {
         isGenerated: true,
         originalZone: undefined,
         battlefieldLane: zone === "battlefield" ? inferLaneFromCardData(card) : "noncreatures",
+        battlefieldOrder:
+          zone === "battlefield"
+            ? gameRef.current.instances.filter((item) => item.zone === "battlefield").length
+            : undefined,
         battlefieldPosition: defaultFreePosition(
           gameRef.current.instances.filter((item) => item.zone === "battlefield").length,
         ),
@@ -919,6 +935,7 @@ function App() {
             faceDown: false,
             displayBack: false,
             battlefieldLane: data ? inferLaneFromCardData(data) : card.battlefieldLane,
+            battlefieldOrder: undefined,
             battlefieldPosition: defaultFreePosition(0),
           },
         ];
@@ -930,8 +947,9 @@ function App() {
         }
 
         const position = defaultFreePosition(boardIndex);
+        const order = boardIndex;
         boardIndex += 1;
-        return { ...card, battlefieldPosition: position };
+        return { ...card, battlefieldOrder: order, battlefieldPosition: position };
       });
       const library = shuffleCards(positionedCards.filter((card) => card.zone === "library"));
       const others = positionedCards.filter((card) => card.zone !== "library");
@@ -959,6 +977,72 @@ function App() {
       moveCard(cardId, zone, lane);
     }
     setDraggedId(undefined);
+  }
+
+  function onDropBeforeCard(
+    event: DragEvent<HTMLElement>,
+    lane: BattlefieldLane,
+    targetId: string,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const cardId = event.dataTransfer.getData("text/plain") || draggedId;
+    if (cardId && cardId !== targetId) {
+      moveCardBeforeInBattlefieldLane(cardId, lane, targetId);
+    }
+    setDraggedId(undefined);
+  }
+
+  function moveCardBeforeInBattlefieldLane(
+    cardId: string,
+    lane: BattlefieldLane,
+    targetId: string,
+  ) {
+    setGame((current) => {
+      const moving = current.instances.find((card) => card.instanceId === cardId);
+      if (!moving) {
+        return current;
+      }
+
+      const laneCards = orderedBattlefieldCards(
+        current.instances.filter(
+          (card) =>
+            card.zone === "battlefield" &&
+            (card.battlefieldLane === lane || card.instanceId === cardId) &&
+            card.instanceId !== cardId,
+        ),
+      );
+      const targetIndex = Math.max(
+        0,
+        laneCards.findIndex((card) => card.instanceId === targetId),
+      );
+      const orderedIds = [
+        ...laneCards.slice(0, targetIndex).map((card) => card.instanceId),
+        cardId,
+        ...laneCards.slice(targetIndex).map((card) => card.instanceId),
+      ];
+      const orderById = new Map(orderedIds.map((id, index) => [id, index]));
+
+      return {
+        ...current,
+        activeZone: "battlefield",
+        selectedId: cardId,
+        instances: current.instances.map((card) => {
+          const nextOrder = orderById.get(card.instanceId);
+          if (card.instanceId === cardId) {
+            return {
+              ...card,
+              zone: "battlefield",
+              battlefieldLane: lane,
+              battlefieldOrder: nextOrder ?? 0,
+            };
+          }
+
+          return nextOrder === undefined ? card : { ...card, battlefieldOrder: nextOrder };
+        }),
+        actions: [createAction(`Reordered ${moving.name} in ${lane}.`), ...current.actions],
+      };
+    });
   }
 
   function startSolo() {
@@ -1608,6 +1692,7 @@ function App() {
                   onHoverCard={(card, event) => showCardPreview(card, game.cardsById[card.cardId], event)}
                   onLeaveCard={() => setHoverPreview(undefined)}
                   onDrop={onDrop}
+                  onDropBeforeCard={onDropBeforeCard}
                   onFreeMove={moveFreeBattlefieldCard}
                   onFinishFreeMove={clearTouchSelection}
                   onDoubleClickCard={toggleTapped}
@@ -2033,6 +2118,7 @@ function BattlefieldZone({
   onHoverCard,
   onLeaveCard,
   onDrop,
+  onDropBeforeCard,
   onFreeMove,
   onFinishFreeMove,
   onDoubleClickCard,
@@ -2052,6 +2138,11 @@ function BattlefieldZone({
     event: DragEvent<HTMLElement>,
     zone: ZoneId,
     lane?: BattlefieldLane,
+  ) => void;
+  onDropBeforeCard: (
+    event: DragEvent<HTMLElement>,
+    lane: BattlefieldLane,
+    targetId: string,
   ) => void;
   onFreeMove: (cardId: string, x: number, y: number) => void;
   onFinishFreeMove: () => void;
@@ -2094,7 +2185,9 @@ function BattlefieldZone({
   return (
     <div className="battlefield-lanes">
       {battlefieldLanes.map((lane) => {
-        const laneCards = cards.filter((card) => card.battlefieldLane === lane.id);
+        const laneCards = orderedBattlefieldCards(
+          cards.filter((card) => card.battlefieldLane === lane.id),
+        );
 
         return (
           <section
@@ -2128,6 +2221,9 @@ function BattlefieldZone({
                   onSelect={() => onSelect(card)}
                   onDoubleClick={() => onDoubleClickCard(card.instanceId)}
                   onDragStart={(event) => onDragStart(event, card)}
+                  onDropBefore={(event) =>
+                    onDropBeforeCard(event, lane.id, card.instanceId)
+                  }
                 />
               ))}
             </div>
@@ -2292,7 +2388,9 @@ function OpponentBoard({
   onHoverCard: (card: PublicCard, event: MouseEvent<HTMLElement>) => void;
   onLeaveCard: () => void;
 }) {
-  const battlefield = peer.publicCards.filter((card) => card.zone === "battlefield");
+  const battlefield = orderedBattlefieldCards(
+    peer.publicCards.filter((card) => card.zone === "battlefield"),
+  );
   const command = peer.publicCards.filter((card) => card.zone === "command");
   const graveyard = peer.publicCards.filter((card) => card.zone === "graveyard");
   const exile = peer.publicCards.filter((card) => card.zone === "exile");
@@ -2326,7 +2424,9 @@ function OpponentBoard({
             <RemoteZone
               key={lane.id}
               label={lane.label}
-              cards={battlefield.filter((card) => card.battlefieldLane === lane.id)}
+              cards={orderedBattlefieldCards(
+                battlefield.filter((card) => card.battlefieldLane === lane.id),
+              )}
               cardsById={peer.cardsById}
               selectedRemoteId={selectedRemoteId}
               onSelectCard={onSelectCard}
@@ -2502,6 +2602,7 @@ function CardTile({
   onDoubleClick,
   onDragStart,
   onDragEnd,
+  onDropBefore,
 }: {
   card: CardInstance;
   data?: CardData;
@@ -2515,6 +2616,7 @@ function CardTile({
   onDoubleClick?: () => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd?: (event: DragEvent<HTMLButtonElement>) => void;
+  onDropBefore?: (event: DragEvent<HTMLButtonElement>) => void;
 }) {
   const imageUrl = cardDisplayImage(data, card);
   const counters = visibleCounters(card.counters);
@@ -2562,6 +2664,12 @@ function CardTile({
       draggable={!isCompactViewport()}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      onDragOver={(event) => {
+        if (onDropBefore) {
+          event.preventDefault();
+        }
+      }}
+      onDrop={onDropBefore}
       onMouseMove={onHover}
       onMouseLeave={onLeave}
       onTouchEnd={onTouchEnd}
@@ -2643,6 +2751,7 @@ function buildPublicState(
       isGenerated: card.isGenerated,
       originalZone: card.originalZone,
       battlefieldLane: card.battlefieldLane,
+      battlefieldOrder: card.battlefieldOrder,
       battlefieldPosition: card.battlefieldPosition,
     }));
   const zoneCounts = createZoneCounts(game.instances);
@@ -2687,6 +2796,34 @@ function cardDisplayImage(
   }
 
   return card.displayBack ? data.backImageUrl ?? data.imageUrl : data.imageUrl;
+}
+
+function orderedBattlefieldCards<T extends { battlefieldOrder?: number }>(cards: T[]): T[] {
+  return cards
+    .map((card, index) => ({ card, index }))
+    .sort(
+      (a, b) =>
+        (a.card.battlefieldOrder ?? a.index) - (b.card.battlefieldOrder ?? b.index) ||
+        a.index - b.index,
+    )
+    .map(({ card }) => card);
+}
+
+function nextBattlefieldOrder(
+  game: GameState,
+  lane: BattlefieldLane,
+  excludingId?: string,
+): number {
+  const laneCards = game.instances.filter(
+    (card) =>
+      card.zone === "battlefield" &&
+      card.battlefieldLane === lane &&
+      card.instanceId !== excludingId,
+  );
+
+  return laneCards.length
+    ? Math.max(...laneCards.map((card, index) => card.battlefieldOrder ?? index)) + 1
+    : 0;
 }
 
 function getOriginalZone(card: CardInstance): ZoneId | undefined {
