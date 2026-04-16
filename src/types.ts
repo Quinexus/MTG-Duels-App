@@ -49,6 +49,7 @@ export type CardInstance = {
   isToken: boolean;
   isGenerated: boolean;
   originalZone?: ZoneId;
+  zoneOrder?: number;
   battlefieldLane: BattlefieldLane;
   battlefieldOrder?: number;
   battlefieldPosition: {
@@ -98,6 +99,7 @@ export type PublicCard = {
   isToken: boolean;
   isGenerated: boolean;
   originalZone?: ZoneId;
+  zoneOrder?: number;
   battlefieldLane: BattlefieldLane;
   battlefieldOrder?: number;
   battlefieldPosition: {
