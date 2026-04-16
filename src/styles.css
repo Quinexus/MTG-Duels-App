@@ -704,8 +704,8 @@ select:focus {
 
 .remote-free-battlefield > div {
   position: relative;
-  min-height: 205px;
-  aspect-ratio: 16 / 10;
+  height: clamp(220px, 32vw, 420px);
+  min-height: 0;
   overflow: hidden;
   background:
     linear-gradient(rgba(247, 243, 234, 0.035) 1px, transparent 1px),
@@ -716,8 +716,8 @@ select:focus {
 
 .remote-free-card {
   position: absolute;
-  width: 74px;
-  max-width: 16%;
+  width: clamp(82px, 7vw, 120px);
+  max-width: 18%;
 }
 
 .remote-zone > span {
@@ -885,6 +885,17 @@ select:focus {
 .zone-battlefield {
   grid-column: span 9;
   min-height: 0;
+}
+
+.zone-battlefield.is-free-expanded {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.zone-battlefield.is-free-expanded .battlefield-free {
+  flex: none;
+  width: max(100%, 1280px);
+  min-height: 720px;
 }
 
 .zone-graveyard,
@@ -1793,27 +1804,29 @@ select:focus {
 
   .opponent-battlefield,
   .opponent-zones {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 8px;
-    overflow-x: auto;
+    overflow: hidden;
   }
 
   .remote-zone {
-    min-width: 180px;
+    min-width: 0;
   }
 
   .remote-free-battlefield {
-    min-width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .remote-free-battlefield > div {
-    min-height: 220px;
-    aspect-ratio: 16 / 10;
+    height: 220px;
+    min-height: 0;
   }
 
   .remote-free-card {
-    width: clamp(48px, 13vw, 68px);
-    max-width: 18%;
+    width: clamp(56px, 18vw, 82px);
+    max-width: 22%;
   }
 
   textarea {
