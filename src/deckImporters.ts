@@ -2,6 +2,9 @@ type MoxfieldBoardCard = {
   quantity?: number;
   card?: {
     name?: string;
+    set?: string;
+    cn?: string;
+    collectorNumber?: string;
   };
 };
 
@@ -20,6 +23,16 @@ type ArchidektCard = {
       name?: string;
     };
     name?: string;
+    collectorNumber?: string;
+    collector_number?: string;
+    uid?: string;
+    edition?: {
+      editioncode?: string;
+      editionCode?: string;
+      code?: string;
+    };
+    set?: string;
+    setCode?: string;
   };
 };
 
@@ -91,7 +104,7 @@ async function importArchidektDeck(url: URL) {
       return;
     }
 
-    const line = `${quantity} ${name}`;
+    const line = formatDeckLine(quantity, name, printingFromArchidektCard(entry.card));
     const categories = entry.categories?.map((category) => category.toLowerCase()) ?? [];
 
     if (categories.some((category) => category.includes("commander"))) {
@@ -148,9 +161,38 @@ function boardToText(label: string, board?: Record<string, MoxfieldBoardCard>) {
   const lines = Object.values(board ?? {})
     .map((entry) => {
       const name = entry.card?.name;
-      return name ? `${entry.quantity ?? 1} ${name}` : "";
+      return name
+        ? formatDeckLine(entry.quantity ?? 1, name, {
+            setCode: entry.card?.set,
+            collectorNumber: entry.card?.cn ?? entry.card?.collectorNumber,
+          })
+        : "";
     })
     .filter(Boolean);
 
   return lines.length ? `${label}\n${lines.join("\n")}` : "";
+}
+
+function formatDeckLine(
+  quantity: number,
+  name: string,
+  printing?: { setCode?: string; collectorNumber?: string },
+) {
+  const setCode = printing?.setCode?.trim();
+  const collectorNumber = printing?.collectorNumber?.trim();
+  return setCode && collectorNumber
+    ? `${quantity} ${name} (${setCode}) ${collectorNumber}`
+    : `${quantity} ${name}`;
+}
+
+function printingFromArchidektCard(card: ArchidektCard["card"]) {
+  return {
+    setCode:
+      card?.edition?.editioncode ??
+      card?.edition?.editionCode ??
+      card?.edition?.code ??
+      card?.setCode ??
+      card?.set,
+    collectorNumber: card?.collectorNumber ?? card?.collector_number,
+  };
 }

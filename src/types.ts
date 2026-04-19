@@ -34,6 +34,10 @@ export type CardData = {
   imageUrl?: string;
   backImageUrl?: string;
   scryfallUri?: string;
+  relatedTokens?: Array<{
+    id: string;
+    name: string;
+  }>;
 };
 
 export type CardInstance = {
@@ -147,6 +151,11 @@ export type LobbyWireMessage =
       type: "chat";
       playerId: string;
       message: ChatMessage;
+    }
+  | {
+      type: "action";
+      playerId: string;
+      action: GameAction;
     };
 
 export type ScryfallCard = {
@@ -157,6 +166,12 @@ export type ScryfallCard = {
   mana_cost?: string;
   cmc?: number;
   scryfall_uri?: string;
+  all_parts?: Array<{
+    id: string;
+    component?: string;
+    name: string;
+    type_line?: string;
+  }>;
   image_uris?: {
     small?: string;
     normal?: string;

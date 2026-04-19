@@ -1,7 +1,7 @@
 import { deckLineCacheKey, scryfallCardToCardData } from "./deck";
 import type { CardData, DeckLine, ScryfallCard } from "./types";
 
-const CACHE_KEY = "mtg-duels-scryfall-cache-v1";
+const CACHE_KEY = "mtg-duels-scryfall-cache-v2";
 
 type CollectionResponse = {
   data: ScryfallCard[];
@@ -89,7 +89,9 @@ export async function fetchCardsForDeckLines(lines: DeckLine[]): Promise<{
     const cached = cache[key];
     if (cached) {
       cardsByName.set(deckLineCacheKey(line), cached);
-      cardsByName.set(line.name, cached);
+      if (!line.setCode || !line.collectorNumber) {
+        cardsByName.set(line.name, cached);
+      }
       return false;
     }
 
@@ -134,9 +136,11 @@ export async function fetchCardsForDeckLines(lines: DeckLine[]): Promise<{
       const data = scryfallCardToCardData(card);
       const key = deckLineCacheKey(line);
       cardsByName.set(key, data);
-      cardsByName.set(line.name, data);
       cache[key.toLowerCase()] = data;
-      cache[line.name.toLowerCase()] = data;
+      if (!line.setCode || !line.collectorNumber) {
+        cardsByName.set(line.name, data);
+        cache[line.name.toLowerCase()] = data;
+      }
     });
 
     result.not_found?.forEach((item) => {
@@ -148,6 +152,37 @@ export async function fetchCardsForDeckLines(lines: DeckLine[]): Promise<{
 
   writeCache(cache);
   return { cardsByName, missing: Array.from(new Set(missing)) };
+}
+
+export async function fetchRelatedTokensForCards(cards: CardData[]): Promise<CardData[]> {
+  const tokenIds = Array.from(
+    new Set(cards.flatMap((card) => card.relatedTokens?.map((token) => token.id) ?? [])),
+  );
+  if (tokenIds.length === 0) {
+    return [];
+  }
+
+  const tokens: CardData[] = [];
+  for (const batch of chunk(tokenIds, 75)) {
+    const response = await fetch("https://api.scryfall.com/cards/collection", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        identifiers: batch.map((id) => ({ id })),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Scryfall returned ${response.status} while fetching tokens`);
+    }
+
+    const result = (await response.json()) as CollectionResponse;
+    tokens.push(...result.data.map(scryfallCardToCardData));
+  }
+
+  return tokens;
 }
 
 export async function fetchCardFromScryfallInput(input: string): Promise<CardData> {

@@ -27,7 +27,11 @@ import {
 } from "./multiplayer";
 import { preconDecks, randomPrecon } from "./precons";
 import archidektCatalog from "./archidekt-precons.json";
-import { fetchCardFromScryfallInput, fetchCardsForDeckLines } from "./scryfall";
+import {
+  fetchCardFromScryfallInput,
+  fetchCardsForDeckLines,
+  fetchRelatedTokensForCards,
+} from "./scryfall";
 import type {
   CardData,
   CardInstance,
@@ -149,7 +153,7 @@ function App() {
   const [draggedId, setDraggedId] = useState<string>();
   const [libraryView, setLibraryView] = useState<"hidden" | "scry" | "search">("hidden");
   const [scryCount, setScryCount] = useState(0);
-  const [layoutScale, setLayoutScale] = useState(1.35);
+  const [layoutScale, setLayoutScale] = useState(1);
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isCompactViewport());
   const [rightPanelOpen, setRightPanelOpen] = useState(() => !isCompactViewport());
   const [leftTool, setLeftTool] = useState<LeftTool>("deck");
@@ -298,6 +302,14 @@ function App() {
             : [...current, message.message].slice(-60),
         );
       }
+
+      if (message.type === "action") {
+        setGame((current) =>
+          current.actions.some((action) => action.id === message.action.id)
+            ? current
+            : { ...current, actions: [message.action, ...current.actions] },
+        );
+      }
     },
     [playerId, publishState, roomCode],
   );
@@ -377,15 +389,27 @@ function App() {
         Array.from(cardsByName.values()).map((card) => [card.id, card]),
       );
       const instances = shuffleCards(buildInstances(lines, cardsByName));
-      const tokenBank = buildTokenBankForDeck(cardsById, instances.length);
+      let relatedTokens: CardData[] = [];
+      let tokenFetchFailed = false;
+
+      try {
+        relatedTokens = await fetchRelatedTokensForCards(Object.values(cardsById));
+      } catch {
+        tokenFetchFailed = true;
+      }
+
+      const relatedTokenCardsById = Object.fromEntries(
+        relatedTokens.map((card) => [card.id, card]),
+      );
+      const tokenBank = buildTokenBankForDeck(instances.length, relatedTokens);
 
       setGame({
         ...initialState,
-        cardsById: { ...cardsById, ...tokenBank.cards },
+        cardsById: { ...cardsById, ...relatedTokenCardsById, ...tokenBank.cards },
         instances: [...tokenBank.instances, ...instances],
         actions: [
           createAction(
-            `Imported ${instances.length} cards${tokenBank.instances.length ? ` and ${tokenBank.instances.length} token bank entries` : ""}${missing.length ? `; missing ${missing.join(", ")}` : ""}.`,
+            `Imported ${instances.length} cards${tokenBank.instances.length ? ` and ${tokenBank.instances.length} token bank entries` : ""}${missing.length ? `; missing ${missing.join(", ")}` : ""}${tokenFetchFailed ? "; token lookup failed" : ""}.`,
           ),
         ],
       });
@@ -443,6 +467,24 @@ function App() {
       }
 
       return moveCardsToZone(current, toDraw, "hand", `Drew ${toDraw.length}.`);
+    });
+  }
+
+  function mill(count = 1) {
+    setLibraryView("hidden");
+    setScryCount(0);
+    setGame((current) => {
+      const library = orderedZoneCards(
+        current.instances.filter((card) => card.zone === "library"),
+        "library",
+      );
+      const toMill = library.slice(0, count).map((card) => card.instanceId);
+
+      if (toMill.length === 0) {
+        return current;
+      }
+
+      return moveCardsToZone(current, toMill, "graveyard", `Milled ${toMill.length}.`);
     });
   }
 
@@ -535,8 +577,54 @@ function App() {
   }
 
   function moveCard(cardId: string, zone: ZoneId, lane?: BattlefieldLane) {
-    setGame((current) =>
-      updateCards(
+    setGame((current) => {
+      const source = current.instances.find((card) => card.instanceId === cardId);
+      if (!source) {
+        return current;
+      }
+
+      if (source.zone === "tokenBank" && zone !== "tokenBank") {
+        const data = current.cardsById[source.cardId];
+        const resolvedLane =
+          zone === "battlefield" ? lane ?? inferLaneFromCardData(data) : source.battlefieldLane;
+        const order =
+          zone === "battlefield"
+            ? nextBattlefieldOrder(current, resolvedLane)
+            : nextZoneOrder(current, zone);
+        const battlefieldCount = current.instances.filter(
+          (card) => card.zone === "battlefield",
+        ).length;
+        const tokenCopy: CardInstance = {
+          ...source,
+          instanceId: crypto.randomUUID(),
+          zone,
+          tapped: false,
+          counters: {},
+          faceDown: false,
+          displayBack: false,
+          originalZone: undefined,
+          battlefieldLane: resolvedLane,
+          battlefieldOrder: zone === "battlefield" ? order : undefined,
+          zoneOrder: zone === "battlefield" ? undefined : order,
+          battlefieldPosition:
+            zone === "battlefield"
+              ? defaultFreePosition(battlefieldCount)
+              : source.battlefieldPosition,
+        };
+
+        return {
+          ...current,
+          instances: [tokenCopy, ...current.instances],
+          selectedId: tokenCopy.instanceId,
+          activeZone: zone,
+          actions: [
+            createAction(`Created ${source.name} from token bank in ${zone}.`),
+            ...current.actions,
+          ],
+        };
+      }
+
+      return updateCards(
         current,
         [cardId],
         {
@@ -564,8 +652,8 @@ function App() {
               : undefined,
         },
         `Moved ${cardName(current, cardId)} to ${zone}.`,
-      ),
-    );
+      );
+    });
   }
 
   function moveSelected(zone: ZoneId, lane?: BattlefieldLane) {
@@ -598,6 +686,47 @@ function App() {
     const cardHeight = cardWidth / 0.714;
     const x = ((event.clientX - board.left - cardWidth / 2) / board.width) * 100;
     const y = ((event.clientY - board.top - cardHeight / 2) / board.height) * 100;
+
+    if (selected.zone === "tokenBank") {
+      setGame((current) => {
+        const source = current.instances.find((card) => card.instanceId === selected.instanceId);
+        if (!source) {
+          return current;
+        }
+
+        const data = current.cardsById[source.cardId];
+        const lane = inferLaneFromCardData(data);
+        const tokenCopy: CardInstance = {
+          ...source,
+          instanceId: crypto.randomUUID(),
+          zone: "battlefield",
+          tapped: false,
+          counters: {},
+          faceDown: false,
+          displayBack: false,
+          originalZone: undefined,
+          battlefieldLane: lane,
+          battlefieldOrder: nextBattlefieldOrder(current, lane),
+          zoneOrder: undefined,
+          battlefieldPosition: {
+            x: clamp(x, 0, 92),
+            y: clamp(y, 0, 86),
+          },
+        };
+
+        return {
+          ...current,
+          instances: [tokenCopy, ...current.instances],
+          selectedId: undefined,
+          activeZone: "battlefield",
+          actions: [
+            createAction(`Created ${source.name} from token bank in battlefield.`),
+            ...current.actions,
+          ],
+        };
+      });
+      return;
+    }
 
     if (selected.zone !== "battlefield") {
       moveCard(selected.instanceId, "battlefield");
@@ -650,6 +779,34 @@ function App() {
       { counters: nextCounters },
       `${delta > 0 ? "Added" : "Removed"} ${type} counter on ${selected.name}.`,
     );
+  }
+
+  function resetAllCounters() {
+    setGame((current) => {
+      const cardsWithCounters = current.instances.filter(
+        (card) => visibleCounters(card.counters).length > 0,
+      );
+
+      if (cardsWithCounters.length === 0) {
+        return {
+          ...current,
+          actions: [createAction("Reset counters: no counters on the table."), ...current.actions],
+        };
+      }
+
+      return {
+        ...current,
+        instances: current.instances.map((card) =>
+          visibleCounters(card.counters).length > 0 ? { ...card, counters: {} } : card,
+        ),
+        actions: [
+          createAction(
+            `Reset all counters on ${cardsWithCounters.length} card${cardsWithCounters.length === 1 ? "" : "s"}.`,
+          ),
+          ...current.actions,
+        ],
+      };
+    });
   }
 
   function updateSelected(update: Partial<CardInstance>, action: string) {
@@ -942,12 +1099,16 @@ function App() {
   function rollDie(sides: number) {
     const cleanSides = Math.max(2, sanitizeCount(sides, 20));
     const result = Math.floor(Math.random() * cleanSides) + 1;
+    const action = createAction(`${playerName} rolled d${cleanSides}: ${result}.`);
     setDiceSides(cleanSides);
     setLatestRoll({ sides: cleanSides, result });
     setGame((current) => ({
       ...current,
-      actions: [createAction(`Rolled d${cleanSides}: ${result}.`), ...current.actions],
+      actions: [action, ...current.actions],
     }));
+    if (isConnected) {
+      postLobbyMessage({ type: "action", playerId, action });
+    }
   }
 
   function changeCommanderTax(delta: number) {
@@ -1240,7 +1401,7 @@ function App() {
       className={`app-shell ${leftPanelOpen ? "" : "is-left-collapsed"} ${
         rightPanelOpen ? "" : "is-right-collapsed"
       }`}
-      style={{ "--zone-scale": layoutScale } as CSSProperties}
+      style={{ "--zone-scale": layoutScale * 1.35 } as CSSProperties}
       onMouseLeave={() => setHoverPreview(undefined)}
     >
       <button
@@ -1441,8 +1602,10 @@ function App() {
               <section className="quick-controls" aria-label="Game controls">
                 <p className="eyebrow">Table actions</p>
                 <button onClick={() => draw(1)}>Draw 1</button>
+                <button onClick={() => mill(1)}>Mill 1</button>
                 <button onClick={() => draw(7)}>Draw 7</button>
                 <button onClick={untapAllBattlefield}>Untap all</button>
+                <button onClick={resetAllCounters}>Reset counters</button>
                 <button onClick={() => scry(1)}>Scry 1</button>
                 <button onClick={() => scry(2)}>Scry 2</button>
                 {libraryView !== "hidden" && <button onClick={closeLibraryReveal}>Done looking</button>}
@@ -1471,6 +1634,7 @@ function App() {
                   />
                   <button onClick={() => draw(xValue)}>Draw X</button>
                   <button onClick={() => scry(xValue)}>Scry X</button>
+                  <button onClick={() => mill(xValue)}>Mill X</button>
                 </div>
                 <div className="dice-controls" aria-label="Dice roller">
                   <span>Roll</span>
@@ -1604,8 +1768,8 @@ function App() {
           <input
             id="zone-size"
             type="range"
-            min="0.75"
-            max="1.45"
+            min="0.6"
+            max="1.15"
             step="0.05"
             value={layoutScale}
             onChange={(event) => setLayoutScale(Number(event.target.value))}
@@ -3020,57 +3184,42 @@ function getOriginalZone(card: CardInstance): ZoneId | undefined {
   return "library";
 }
 
-function buildTokenBankForDeck(cardsById: Record<string, CardData>, offset: number) {
-  const tokenMatches = new Set<string>();
-  Object.values(cardsById).forEach((card) => {
-    const text = `${card.name} ${card.typeLine} ${card.oracleText}`.toLowerCase();
-    tokenPresets.forEach((token) => {
-      const tokenWords = token.name.toLowerCase().replace(/ token$/, "");
-      const likelyToken =
-        text.includes(`${tokenWords} token`) ||
-        (token.name.includes("/") && text.includes("creature token")) ||
-        (token.name === "Treasure Token" && text.includes("treasure")) ||
-        (token.name === "Clue Token" && text.includes("clue")) ||
-        (token.name === "Food Token" && text.includes("food")) ||
-        (token.name === "Blood Token" && text.includes("blood"));
+function buildTokenBankForDeck(offset: number, relatedTokens: CardData[] = []) {
+  const tokenCardsByName = new Map<string, CardData>();
 
-      if (likelyToken) {
-        tokenMatches.add(token.name);
-      }
-    });
+  relatedTokens.forEach((card) => {
+    tokenCardsByName.set(normalizeTokenName(card.name), card);
   });
 
   const cards: Record<string, CardData> = {};
-  const instances = Array.from(tokenMatches).map((tokenName, index) => {
-    const token = tokenPresets.find((preset) => preset.name === tokenName)!;
-    const card: CardData = {
-      id: `token-${token.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      name: token.name,
-      typeLine: token.typeLine,
-      oracleText: token.oracleText,
-      cmc: 0,
-    };
-    cards[card.id] = card;
+  const instances = Array.from(tokenCardsByName.values())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((card, index) => {
+      cards[card.id] = card;
 
-    return {
-      instanceId: crypto.randomUUID(),
-      cardId: card.id,
-      name: card.name,
-      zone: "tokenBank" as const,
-      owner: "you" as const,
-      tapped: false,
-      counters: {},
-      faceDown: false,
-      displayBack: false,
-      isToken: true,
-      isGenerated: true,
-      originalZone: "tokenBank" as const,
-      battlefieldLane: inferTokenLane(card),
-      battlefieldPosition: defaultFreePosition(offset + index),
-    };
-  });
+      return {
+        instanceId: crypto.randomUUID(),
+        cardId: card.id,
+        name: card.name,
+        zone: "tokenBank" as const,
+        owner: "you" as const,
+        tapped: false,
+        counters: {},
+        faceDown: false,
+        displayBack: false,
+        isToken: true,
+        isGenerated: true,
+        originalZone: "tokenBank" as const,
+        battlefieldLane: inferTokenLane(card),
+        battlefieldPosition: defaultFreePosition(offset + index),
+      };
+    });
 
   return { cards, instances };
+}
+
+function normalizeTokenName(name: string) {
+  return name.toLowerCase().replace(/\s+token$/, "").trim();
 }
 
 function defaultFreePosition(index: number) {

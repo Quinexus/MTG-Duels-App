@@ -108,6 +108,9 @@ export function scryfallCardToCardData(card: ScryfallCard): CardData {
     imageUrl,
     backImageUrl: back?.image_uris?.normal ?? back?.image_uris?.large,
     scryfallUri: card.scryfall_uri,
+    relatedTokens: card.all_parts
+      ?.filter((part) => part.component === "token")
+      .map((part) => ({ id: part.id, name: part.name })),
   };
 }
 

@@ -479,7 +479,7 @@ select:focus {
 }
 
 .x-controls {
-  grid-template-columns: auto 70px 1fr 1fr;
+  grid-template-columns: auto 70px repeat(3, minmax(0, 1fr));
   align-items: center;
 }
 
