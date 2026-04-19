@@ -1185,12 +1185,28 @@ select:focus {
 
 .counter-stack b {
   min-width: 24px;
-  padding: 3px 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 3px 2px 6px;
   color: #10110f;
   background: #f1d66d;
   border-radius: 7px;
   font-size: 10px;
   line-height: 1;
+}
+
+.counter-stack i,
+.counter-controls b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-style: normal;
+  color: #10110f;
+  background: #87e7a9;
 }
 
 .library-index {
@@ -1319,16 +1335,13 @@ select:focus {
   align-items: center;
 }
 
-.counter-controls span {
+.counter-label {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   color: #eee7d9;
   font-size: 13px;
-}
-
-.counter-controls b {
-  color: #f1d66d;
 }
 
 .counter-controls button {
@@ -1337,6 +1350,15 @@ select:focus {
   border-radius: 8px;
   background: #242822;
   cursor: pointer;
+}
+
+.reset-counters-action {
+  grid-column: 1 / -1;
+}
+
+.reset-counters-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .library-actions button {

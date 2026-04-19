@@ -140,6 +140,8 @@ function App() {
   const [transportStatus, setTransportStatus] = useState<LobbyTransportStatus>("local");
   const transportRef = useRef<LobbyTransport | undefined>(undefined);
   const gameRef = useRef<GameState>(initialState);
+  const remoteActionIdsRef = useRef(new Set<string>());
+  const sharedActionIdsRef = useRef(new Set<string>());
   const [selectedPreconId, setSelectedPreconId] = useState(initialPrecon.id);
   const [deckInput, setDeckInput] = useState(initialPrecon.decklist);
   const [deckUrl, setDeckUrl] = useState("");
@@ -304,6 +306,7 @@ function App() {
       }
 
       if (message.type === "action") {
+        remoteActionIdsRef.current.add(message.action.id);
         setGame((current) =>
           current.actions.some((action) => action.id === message.action.id)
             ? current
@@ -370,6 +373,35 @@ function App() {
       publishState();
     }
   }, [game, isConnected, publishState]);
+
+  useEffect(() => {
+    if (!isConnected) {
+      return;
+    }
+
+    postLobbyMessage(buildJoinMessage());
+    publishState();
+  }, [buildJoinMessage, isConnected, playerName, postLobbyMessage, publishState]);
+
+  useEffect(() => {
+    const action = game.actions[0];
+    if (!isConnected || !action || remoteActionIdsRef.current.has(action.id)) {
+      return;
+    }
+
+    if (sharedActionIdsRef.current.has(action.id) || !isPublicActionText(action.text)) {
+      return;
+    }
+
+    sharedActionIdsRef.current.add(action.id);
+    const prefixedAction = {
+      ...action,
+      text: action.text.startsWith(`${playerName}: `)
+        ? action.text
+        : `${playerName}: ${action.text}`,
+    };
+    postLobbyMessage({ type: "action", playerId, action: prefixedAction });
+  }, [game.actions, isConnected, playerId, playerName, postLobbyMessage]);
 
   async function importDeck() {
     const lines = parseDeckList(deckInput);
@@ -781,32 +813,16 @@ function App() {
     );
   }
 
-  function resetAllCounters() {
-    setGame((current) => {
-      const cardsWithCounters = current.instances.filter(
-        (card) => visibleCounters(card.counters).length > 0,
-      );
+  function resetSelectedCounters() {
+    if (!selected) {
+      return;
+    }
 
-      if (cardsWithCounters.length === 0) {
-        return {
-          ...current,
-          actions: [createAction("Reset counters: no counters on the table."), ...current.actions],
-        };
-      }
+    if (visibleCounters(selected.counters).length === 0) {
+      return;
+    }
 
-      return {
-        ...current,
-        instances: current.instances.map((card) =>
-          visibleCounters(card.counters).length > 0 ? { ...card, counters: {} } : card,
-        ),
-        actions: [
-          createAction(
-            `Reset all counters on ${cardsWithCounters.length} card${cardsWithCounters.length === 1 ? "" : "s"}.`,
-          ),
-          ...current.actions,
-        ],
-      };
-    });
+    updateSelected({ counters: {} }, `Reset counters on ${selected.name}.`);
   }
 
   function updateSelected(update: Partial<CardInstance>, action: string) {
@@ -1099,16 +1115,13 @@ function App() {
   function rollDie(sides: number) {
     const cleanSides = Math.max(2, sanitizeCount(sides, 20));
     const result = Math.floor(Math.random() * cleanSides) + 1;
-    const action = createAction(`${playerName} rolled d${cleanSides}: ${result}.`);
+    const action = createAction(`Rolled d${cleanSides}: ${result}.`);
     setDiceSides(cleanSides);
     setLatestRoll({ sides: cleanSides, result });
     setGame((current) => ({
       ...current,
       actions: [action, ...current.actions],
     }));
-    if (isConnected) {
-      postLobbyMessage({ type: "action", playerId, action });
-    }
   }
 
   function changeCommanderTax(delta: number) {
@@ -1183,6 +1196,7 @@ function App() {
 
   function onDrop(event: DragEvent<HTMLElement>, zone: ZoneId, lane?: BattlefieldLane) {
     event.preventDefault();
+    event.stopPropagation();
     const cardId = event.dataTransfer.getData("text/plain") || draggedId;
     if (cardId) {
       moveCard(cardId, zone, lane);
@@ -1215,6 +1229,74 @@ function App() {
       const moving = current.instances.find((card) => card.instanceId === cardId);
       if (!moving) {
         return current;
+      }
+
+      if (moving.zone === "tokenBank" && zone !== "tokenBank") {
+        const data = current.cardsById[moving.cardId];
+        const newId = crypto.randomUUID();
+        const resolvedLane =
+          zone === "battlefield" ? lane ?? inferLaneFromCardData(data) : moving.battlefieldLane;
+        const zoneCards =
+          zone === "battlefield" && lane
+            ? orderedBattlefieldCards(
+                current.instances.filter(
+                  (card) => card.zone === "battlefield" && card.battlefieldLane === lane,
+                ),
+              )
+            : orderedZoneCards(
+                current.instances.filter((card) => card.zone === zone),
+                zone,
+              );
+        const targetIndex = Math.max(
+          0,
+          zoneCards.findIndex((card) => card.instanceId === targetId),
+        );
+        const orderedIds = [
+          ...zoneCards.slice(0, targetIndex).map((card) => card.instanceId),
+          newId,
+          ...zoneCards.slice(targetIndex).map((card) => card.instanceId),
+        ];
+        const orderById = new Map(orderedIds.map((id, index) => [id, index]));
+        const tokenCopy: CardInstance = {
+          ...moving,
+          instanceId: newId,
+          zone,
+          tapped: false,
+          counters: {},
+          faceDown: false,
+          displayBack: false,
+          originalZone: undefined,
+          battlefieldLane: resolvedLane,
+          battlefieldOrder: zone === "battlefield" ? orderById.get(newId) ?? 0 : undefined,
+          zoneOrder: zone === "battlefield" ? undefined : orderById.get(newId) ?? 0,
+          battlefieldPosition:
+            zone === "battlefield"
+              ? defaultFreePosition(current.instances.filter((card) => card.zone === "battlefield").length)
+              : moving.battlefieldPosition,
+        };
+
+        return {
+          ...current,
+          activeZone: zone,
+          selectedId: newId,
+          instances: [
+            tokenCopy,
+            ...current.instances.map((card) => {
+              const nextOrder = orderById.get(card.instanceId);
+              if (nextOrder === undefined) {
+                return card;
+              }
+
+              return zone === "battlefield"
+                ? { ...card, battlefieldOrder: nextOrder }
+                : { ...card, zoneOrder: nextOrder };
+            }),
+          ],
+          actions: [
+            createAction(`Created ${moving.name} from token bank in ${zone}.`),
+            ...current.actions,
+          ],
+        };
       }
 
       if (zone === "battlefield" && lane) {
@@ -1605,7 +1687,6 @@ function App() {
                 <button onClick={() => mill(1)}>Mill 1</button>
                 <button onClick={() => draw(7)}>Draw 7</button>
                 <button onClick={untapAllBattlefield}>Untap all</button>
-                <button onClick={resetAllCounters}>Reset counters</button>
                 <button onClick={() => scry(1)}>Scry 1</button>
                 <button onClick={() => scry(2)}>Scry 2</button>
                 {libraryView !== "hidden" && <button onClick={closeLibraryReveal}>Done looking</button>}
@@ -1960,6 +2041,8 @@ function App() {
                   onSelect={(card, lane) => selectOrReorderCard(card, zone.id, lane)}
                   onDragStart={(event, card) => {
                     setDraggedId(card.instanceId);
+                    event.dataTransfer.effectAllowed =
+                      card.zone === "tokenBank" ? "copy" : "move";
                     event.dataTransfer.setData("text/plain", card.instanceId);
                   }}
                 />
@@ -1980,6 +2063,8 @@ function App() {
                   }
                   onDragStart={(event, card) => {
                     setDraggedId(card.instanceId);
+                    event.dataTransfer.effectAllowed =
+                      card.zone === "tokenBank" ? "copy" : "move";
                     event.dataTransfer.setData("text/plain", card.instanceId);
                   }}
                 />
@@ -2129,13 +2214,21 @@ function App() {
               <div className="counter-controls">
                 {counterTypes.map((type) => (
                   <div key={type}>
-                    <span>
-                      {type} <b>{selected.counters[type] ?? 0}</b>
+                    <span className="counter-label">
+                      <span>{type}</span>
+                      <b>{selected.counters[type] ?? 0}</b>
                     </span>
                     <button onClick={() => changeCounter(type, -1)}>-</button>
                     <button onClick={() => changeCounter(type, 1)}>+</button>
                   </div>
                 ))}
+                <button
+                  className="reset-counters-action"
+                  onClick={resetSelectedCounters}
+                  disabled={visibleCounters(selected.counters).length === 0}
+                >
+                  Reset this card
+                </button>
               </div>
 
               <div className="move-list">
@@ -2947,7 +3040,8 @@ function CardTile({
         <span className="counter-stack">
           {counters.map(([type, value]) => (
             <b key={type}>
-              {shortCounterName(type)} {value}
+              <span>{shortCounterName(type)}</span>
+              <i>{value}</i>
             </b>
           ))}
         </span>
@@ -3304,6 +3398,19 @@ function shortCounterName(type: CounterType): string {
   }
 
   return type;
+}
+
+function isPublicActionText(text: string) {
+  const privatePatterns = [
+    /^Imported /,
+    /^Pulled up /,
+    /^Put .+ on (top|bottom) of library\.$/,
+    /^Moved .+ to (hand|library)\.$/,
+    /^Reordered .+ in (hand|library)\.$/,
+    / in hand\.$/,
+  ];
+
+  return !privatePatterns.some((pattern) => pattern.test(text));
 }
 
 function getOrCreatePlayerId(): string {
