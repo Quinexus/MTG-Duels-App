@@ -31,14 +31,17 @@ import {
   basicLandNames,
   cardPoolToDecklist,
   createBooster,
-  createSealedPool,
+  createBonusRare,
+  createSealedPacks,
   fetchSetCards,
+  fetchSetIcon,
   groupLimitedCards,
   jumpstartDecklist,
   jumpstartThemes,
   popularLimitedSets,
   randomJumpstartThemeIds,
   type JumpstartTheme,
+  type PackRequest,
 } from "./limited";
 import {
   fetchCardFromScryfallInput,
@@ -155,6 +158,16 @@ type LimitedSelection = {
   draftIndex?: number;
   displayBack?: boolean;
 };
+type SealedPackView = {
+  id: string;
+  label: string;
+  setCode: string;
+  cards: CardData[];
+  opened: boolean;
+  isBonus?: boolean;
+  iconUrl?: string;
+};
+type BonusRareRarityMode = "rare-mythic" | "mythic";
 type ManaColor = "W" | "U" | "B" | "R" | "G";
 type DeckStats = {
   totalCards: number;
@@ -163,8 +176,14 @@ type DeckStats = {
   manaProduction: Record<ManaColor, number>;
   curve: Array<{ label: string; count: number }>;
 };
+type JumpstartFilter = {
+  product: string;
+  color: string;
+};
+type JumpstartRandomScope = "selected" | "same-set" | "all";
 
 const manaColors: ManaColor[] = ["W", "U", "B", "R", "G"];
+const defaultJumpstartFilter: JumpstartFilter = { product: "All", color: "All" };
 
 function App() {
   const [autosavedSession, setAutosavedSession] = useState(readAutosavedSession);
@@ -196,8 +215,12 @@ function App() {
   const [jumpstartThemeIds, setJumpstartThemeIds] = useState(() =>
     randomJumpstartThemeIds(),
   );
-  const [jumpstartProductFilter, setJumpstartProductFilter] = useState("All");
-  const [jumpstartColorFilter, setJumpstartColorFilter] = useState("All");
+  const [jumpstartFilters, setJumpstartFilters] = useState<[JumpstartFilter, JumpstartFilter]>([
+    defaultJumpstartFilter,
+    defaultJumpstartFilter,
+  ]);
+  const [jumpstartRandomScope, setJumpstartRandomScope] =
+    useState<JumpstartRandomScope>("selected");
   const [limitedSetCode, setLimitedSetCode] = useState<string>(popularLimitedSets[0].code);
   const [sealedPackSetCodes, setSealedPackSetCodes] = useState<string[]>(() =>
     Array.from({ length: 6 }, () => popularLimitedSets[0].code),
@@ -208,6 +231,14 @@ function App() {
   const [limitedCardsBySet, setLimitedCardsBySet] = useState<Record<string, CardData[]>>({});
   const [limitedPool, setLimitedPool] = useState<CardData[]>([]);
   const [limitedDeck, setLimitedDeck] = useState<CardData[]>([]);
+  const [sealedPacks, setSealedPacks] = useState<SealedPackView[]>([]);
+  const [includeBonusRare, setIncludeBonusRare] = useState(false);
+  const [bonusRareFromOtherSet, setBonusRareFromOtherSet] = useState(false);
+  const [bonusRareSetCode, setBonusRareSetCode] = useState("");
+  const [bonusRareCreaturesOnly, setBonusRareCreaturesOnly] = useState(false);
+  const [bonusRareRarityMode, setBonusRareRarityMode] =
+    useState<BonusRareRarityMode>("rare-mythic");
+  const [limitedSetIcons, setLimitedSetIcons] = useState<Record<string, string>>({});
   const [limitedLands, setLimitedLands] = useState<Record<string, number>>(() =>
     Object.fromEntries(basicLandNames.map((name) => [name, 0])),
   );
@@ -295,19 +326,14 @@ function App() {
   const showLimitedWorkspace =
     leftTool === "limited" &&
     (limitedMode === "sealed" || limitedMode === "draft") &&
-    (limitedPool.length > 0 || limitedDeck.length > 0 || draftPacks[0]?.length > 0);
+    (limitedPool.length > 0 || limitedDeck.length > 0 || sealedPacks.length > 0 || draftPacks[0]?.length > 0);
   const jumpstartProducts = useMemo(
     () => ["All", ...Array.from(new Set(jumpstartThemes.map((theme) => theme.product ?? "Jumpstart")))],
     [],
   );
-  const filteredJumpstartThemes = useMemo(
-    () =>
-      jumpstartThemes.filter(
-        (theme) =>
-          (jumpstartProductFilter === "All" || theme.product === jumpstartProductFilter) &&
-          (jumpstartColorFilter === "All" || theme.color === jumpstartColorFilter),
-      ),
-    [jumpstartColorFilter, jumpstartProductFilter],
+  const filteredJumpstartThemesBySlot = useMemo(
+    () => jumpstartFilters.map(filterJumpstartThemesBy) as [JumpstartTheme[], JumpstartTheme[]],
+    [jumpstartFilters],
   );
   const deckStats = useMemo(() => buildDeckStatsFromGame(game), [game]);
 
@@ -507,18 +533,16 @@ function App() {
   }, [canUseDraftMode, limitedMode]);
 
   useEffect(() => {
-    if (filteredJumpstartThemes.length === 0) {
-      return;
-    }
-
     setJumpstartThemeIds((current) =>
-      current.map((id, index) =>
-        filteredJumpstartThemes.some((theme) => theme.id === id)
-          ? id
-          : filteredJumpstartThemes[index % filteredJumpstartThemes.length].id,
-      ),
+      current.map((id, index) => {
+        const themes = filteredJumpstartThemesBySlot[index];
+        if (themes.length === 0 || themes.some((theme) => theme.id === id)) {
+          return id;
+        }
+        return themes[0].id;
+      }),
     );
-  }, [filteredJumpstartThemes]);
+  }, [filteredJumpstartThemesBySlot]);
 
   useEffect(() => {
     const action = game.actions[0];
@@ -605,9 +629,21 @@ function App() {
     setJumpstartThemeIds((current) => current.map((id, index) => (index === slot ? themeId : id)));
   }
 
+  function updateJumpstartFilter(slot: 0 | 1, update: Partial<JumpstartFilter>) {
+    setJumpstartFilters((current) =>
+      current.map((filter, index) =>
+        index === slot ? { ...filter, ...update } : filter,
+      ) as [JumpstartFilter, JumpstartFilter],
+    );
+  }
+
   function randomizeJumpstart() {
-    const source = filteredJumpstartThemes.length ? filteredJumpstartThemes : jumpstartThemes;
-    const nextIds = shuffleCards(source).slice(0, 2).map((theme) => theme.id);
+    const sources = randomJumpstartSources();
+    const nextIds = sources.map((source) => shuffleCards(source)[0]?.id).filter(Boolean);
+    if (nextIds.length < 2) {
+      setLimitedStatus("No Jumpstart half-decks match those random filters.");
+      return;
+    }
     setJumpstartThemeIds(nextIds);
     const names = nextIds
       .map((id) => jumpstartThemes.find((theme) => theme.id === id)?.name)
@@ -616,10 +652,29 @@ function App() {
     setLimitedStatus(`Random Jumpstart: ${names}.`);
   }
 
+  function randomJumpstartSources(): [JumpstartTheme[], JumpstartTheme[]] {
+    if (jumpstartRandomScope === "all") {
+      return [jumpstartThemes, jumpstartThemes];
+    }
+
+    if (jumpstartRandomScope === "same-set") {
+      const firstTheme = jumpstartThemes.find((theme) => theme.id === jumpstartThemeIds[0]);
+      const selectedProduct =
+        jumpstartFilters[0].product !== "All"
+          ? jumpstartFilters[0].product
+          : firstTheme?.product ?? jumpstartProducts.find((product) => product !== "All") ?? "All";
+      const sameSetFilter = { product: selectedProduct, color: "All" };
+      return [filterJumpstartThemesBy(sameSetFilter), filterJumpstartThemesBy(sameSetFilter)];
+    }
+
+    return filteredJumpstartThemesBySlot;
+  }
+
   async function importJumpstartDeck() {
     const list = jumpstartDecklist(jumpstartThemeIds);
     setDeckInput(list);
     setSelectedPreconId("");
+    setSealedPacks([]);
     setLimitedStatus("Jumpstart decklist is ready in the importer and loading to the table.");
     await importDeckText(list, "Jumpstart deck");
   }
@@ -643,7 +698,8 @@ function App() {
   }
 
   async function openSealedPool() {
-    const packSets = sealedPackSetCodes.map((code) => code.trim().toLowerCase());
+    const packRequests = sealedPackRequests();
+    const packSets = packRequests.map((pack) => pack.setCode);
     if (packSets.some((code) => !code)) {
       setLimitedStatus("Every sealed pack needs a set code.");
       return;
@@ -652,17 +708,150 @@ function App() {
     setIsLimitedLoading(true);
     setLimitedStatus(`Fetching ${Array.from(new Set(packSets)).join(", ").toUpperCase()} cards...`);
     try {
+      const bonus = includeBonusRare ? await findBonusRare(packSets) : undefined;
       const cardsBySet = await ensureLimitedSets(packSets);
-      const pool = createSealedPool(cardsBySet, packSets);
-      setLimitedPool(pool);
+      const iconBySet = await ensureLimitedSetIcons([
+        ...packSets,
+        ...(bonus?.setCode ? [bonus.setCode] : []),
+      ]);
+      const packs = createSealedPacks(cardsBySet, packRequests);
+      const packViews: SealedPackView[] = packs.map((pack, index) => ({
+        id: `pack-${index}-${pack.setCode}`,
+        label: `Pack ${index + 1}`,
+        setCode: pack.setCode,
+        cards: pack.cards,
+        opened: false,
+        iconUrl: iconBySet[pack.setCode],
+      }));
+      if (bonus) {
+        packViews.push({
+          id: `bonus-${bonus.setCode ?? "random"}`,
+          label: "Bonus rare",
+          setCode: bonus.setCode ?? "random",
+          cards: [bonus],
+          opened: false,
+          isBonus: true,
+          iconUrl: bonus.setCode ? iconBySet[bonus.setCode] : undefined,
+        });
+      }
+      setSealedPacks(packViews);
+      setLimitedPool([]);
       setLimitedDeck([]);
       setLimitedLands(Object.fromEntries(basicLandNames.map((name) => [name, 0])));
-      setLimitedStatus(`Opened ${pool.length} cards from 6 packs. Build at least 40 with lands.`);
+      setLimitedStatus(
+        bonus
+          ? `Prepared 6 Play Boosters plus a random ${bonus.rarity ?? "rare"} from ${bonus.setCode?.toUpperCase() ?? "another set"}. Open packs to build your pool.`
+          : "Prepared 6 Play Boosters. Open packs to build your pool.",
+      );
     } catch (error) {
       setLimitedStatus(error instanceof Error ? error.message : "Could not open sealed pool.");
     } finally {
       setIsLimitedLoading(false);
     }
+  }
+
+  async function findBonusRare(packSetCodes: string[]) {
+    const options = {
+      creaturesOnly: bonusRareCreaturesOnly,
+      mythicOnly: bonusRareRarityMode === "mythic",
+    };
+    const uniquePackCodes = Array.from(new Set(packSetCodes.map((code) => code.toLowerCase())));
+    const chosenOtherSet = bonusRareSetCode.trim().toLowerCase();
+    const candidates = bonusRareFromOtherSet
+      ? chosenOtherSet
+        ? [chosenOtherSet]
+        : shuffleCards(
+            popularLimitedSets
+              .map((set) => set.code)
+              .filter((code) => !uniquePackCodes.includes(code.toLowerCase())),
+          )
+      : shuffleCards(uniquePackCodes);
+
+    for (const code of candidates) {
+      try {
+        const cardsBySet = await ensureLimitedSets([code]);
+        const bonus = createBonusRare(cardsBySet[code] ?? [], options);
+        if (bonus) {
+          return bonus;
+        }
+      } catch {
+        // Some suggested future or supplemental set codes may not exist in Scryfall yet.
+      }
+    }
+
+    return undefined;
+  }
+
+  async function ensureLimitedSetIcons(setCodes: string[]) {
+    const uniqueCodes = Array.from(new Set(setCodes.map((code) => code.trim().toLowerCase()).filter(Boolean)));
+    const missing = uniqueCodes.filter((code) => !limitedSetIcons[code]);
+    if (missing.length === 0) {
+      return limitedSetIcons;
+    }
+
+    const loadedEntries = await Promise.all(
+      missing.map(async (code) => [code, await fetchSetIcon(code)] as const),
+    );
+    const next = {
+      ...limitedSetIcons,
+      ...Object.fromEntries(loadedEntries.filter((entry): entry is [string, string] => Boolean(entry[1]))),
+    };
+    setLimitedSetIcons(next);
+    return next;
+  }
+
+  function sealedPackRequests(): PackRequest[] {
+    return sealedPackSetCodes.map((setCode) => ({
+      setCode: setCode.trim().toLowerCase(),
+    }));
+  }
+
+  function draftPackRequests(): PackRequest[] {
+    return draftPackSetCodes.map((setCode) => ({
+      setCode: setCode.trim().toLowerCase(),
+    }));
+  }
+
+  function applySealedSetToAll() {
+    const code = limitedSetCode.trim().toLowerCase();
+    if (!code) {
+      setLimitedStatus("Enter a set code before applying it to every sealed pack.");
+      return;
+    }
+    setLimitedSetCode(code);
+    setSealedPackSetCodes(Array.from({ length: 6 }, () => code));
+    setLimitedStatus(`All sealed packs set to ${code.toUpperCase()}.`);
+  }
+
+  function openSealedPack(packId: string) {
+    const pack = sealedPacks.find((item) => item.id === packId);
+    if (!pack || pack.opened) {
+      return;
+    }
+
+    setSealedPacks((current) =>
+      current.map((item) => (item.id === packId ? { ...item, opened: true } : item)),
+    );
+    setLimitedPool((current) => [...current, ...pack.cards]);
+    setLimitedStatus(
+      `${pack.label} opened: ${pack.cards.length} card${pack.cards.length === 1 ? "" : "s"} added to your pool.`,
+    );
+  }
+
+  function openAllSealedPacks() {
+    const unopened = sealedPacks.filter((pack) => !pack.opened);
+    if (unopened.length === 0) {
+      return;
+    }
+
+    setSealedPacks((current) => current.map((pack) => ({ ...pack, opened: true })));
+    setLimitedPool((current) => [...current, ...unopened.flatMap((pack) => pack.cards)]);
+    setLimitedStatus(
+      `Opened ${unopened.length} pack${unopened.length === 1 ? "" : "s"} and added ${unopened.reduce(
+        (sum, pack) => sum + pack.cards.length,
+        0,
+      )} cards to your pool.`,
+    );
   }
 
   async function startDraft() {
@@ -671,20 +860,22 @@ function App() {
       return;
     }
 
-    const packSets = draftPackSetCodes.map((code) => code.trim().toLowerCase());
+    const packRequests = draftPackRequests();
+    const packSets = packRequests.map((pack) => pack.setCode);
     const seatCount = Math.max(2, Math.min(8, draftPlayers));
     setIsLimitedLoading(true);
     setLimitedStatus(`Preparing ${seatCount}-seat draft...`);
     try {
       const cardsBySet = await ensureLimitedSets(packSets);
       const firstRoundPacks = Array.from({ length: seatCount }, () =>
-        createBooster(cardsBySet[packSets[0]] ?? []),
+        createBooster(cardsBySet[packRequests[0].setCode] ?? []),
       );
       setDraftSeats(Array.from({ length: seatCount }, () => []));
       setDraftPacks(firstRoundPacks);
       setDraftRound(0);
       setLimitedPool([]);
       setLimitedDeck([]);
+      setSealedPacks([]);
       setLimitedStatus(
         `${seatCount}-seat draft started. You are Seat 1; other seats auto-pick when you take a card.`,
       );
@@ -715,7 +906,7 @@ function App() {
 
       if (packs.every((pack) => pack.length === 0)) {
         const nextRound = draftRound + 1;
-        const packSets = draftPackSetCodes.map((code) => code.trim().toLowerCase());
+        const packRequests = draftPackRequests();
         if (nextRound >= 3) {
           setDraftSeats(nextSeats);
           setLimitedPool(nextSeats[0]);
@@ -726,7 +917,7 @@ function App() {
         }
 
         const nextPacks = Array.from({ length: packs.length }, () =>
-          createBooster(limitedCardsBySet[packSets[nextRound]] ?? []),
+          createBooster(limitedCardsBySet[packRequests[nextRound].setCode] ?? []),
         );
         setDraftSeats(nextSeats);
         setDraftRound(nextRound);
@@ -2073,49 +2264,43 @@ function App() {
                     Choose from {jumpstartThemes.length} local half-decks or roll randomly.
                     The merged 40-card list imports straight to the table.
                   </p>
-                  <div className="jumpstart-filters">
-                    <label>
-                      Set
-                      <select
-                        value={jumpstartProductFilter}
-                        onChange={(event) => setJumpstartProductFilter(event.target.value)}
-                      >
-                        {jumpstartProducts.map((product) => (
-                          <option key={product} value={product}>
-                            {product === "All" ? "All Jumpstart sets" : product}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Color
-                      <select
-                        value={jumpstartColorFilter}
-                        onChange={(event) => setJumpstartColorFilter(event.target.value)}
-                      >
-                        <option value="All">All colors</option>
-                        <option value="W">White</option>
-                        <option value="U">Blue</option>
-                        <option value="B">Black</option>
-                        <option value="R">Red</option>
-                        <option value="G">Green</option>
-                        <option value="C">Colorless</option>
-                        <option value="M">Multicolor</option>
-                      </select>
-                    </label>
-                  </div>
+                  <JumpstartFilterControls
+                    label="Theme 1 filters"
+                    filter={jumpstartFilters[0]}
+                    products={jumpstartProducts}
+                    onChange={(update) => updateJumpstartFilter(0, update)}
+                  />
                   <JumpstartThemeSelect
                     label="Theme 1"
                     value={jumpstartThemeIds[0]}
-                    themes={filteredJumpstartThemes}
+                    themes={filteredJumpstartThemesBySlot[0]}
                     onChange={(themeId) => chooseJumpstartTheme(0, themeId)}
+                  />
+                  <JumpstartFilterControls
+                    label="Theme 2 filters"
+                    filter={jumpstartFilters[1]}
+                    products={jumpstartProducts}
+                    onChange={(update) => updateJumpstartFilter(1, update)}
                   />
                   <JumpstartThemeSelect
                     label="Theme 2"
                     value={jumpstartThemeIds[1]}
-                    themes={filteredJumpstartThemes}
+                    themes={filteredJumpstartThemesBySlot[1]}
                     onChange={(themeId) => chooseJumpstartTheme(1, themeId)}
                   />
+                  <label className="limited-field">
+                    Random source
+                    <select
+                      value={jumpstartRandomScope}
+                      onChange={(event) =>
+                        setJumpstartRandomScope(event.target.value as JumpstartRandomScope)
+                      }
+                    >
+                      <option value="selected">Selected filters</option>
+                      <option value="same-set">Same set</option>
+                      <option value="all">All sets</option>
+                    </select>
+                  </label>
                   <div className="limited-actions">
                     <button onClick={randomizeJumpstart}>Random themes</button>
                     <button className="primary-action" onClick={importJumpstartDeck} disabled={isLoading}>
@@ -2133,40 +2318,100 @@ function App() {
 
               {limitedMode === "sealed" && (
                 <div className="limited-section">
-                  <label htmlFor="sealed-set">Set shortcut</label>
-                  <select
-                    id="sealed-set"
-                    value={limitedSetCode}
-                    onChange={(event) => {
-                      setLimitedSetCode(event.target.value);
-                      setSealedPackSetCodes(Array.from({ length: 6 }, () => event.target.value));
-                    }}
-                  >
+                  <div className="pack-shortcuts">
+                    <label htmlFor="sealed-set">
+                      Set code for all packs
+                      <input
+                        id="sealed-set"
+                        list="limited-set-options"
+                        value={limitedSetCode}
+                        onChange={(event) => setLimitedSetCode(event.target.value)}
+                        placeholder="fdn"
+                      />
+                    </label>
+                    <button className="compact-action" onClick={applySealedSetToAll}>
+                      Use for all packs
+                    </button>
+                  </div>
+                  <datalist id="limited-set-options">
                     {popularLimitedSets.map((set) => (
                       <option key={set.code} value={set.code}>
-                        {set.name} ({set.code.toUpperCase()})
+                        {set.name}
                       </option>
                     ))}
-                  </select>
+                  </datalist>
                   <div className="pack-grid">
                     {sealedPackSetCodes.map((code, index) => (
-                      <label key={index}>
-                        Pack {index + 1}
-                        <input
-                          value={code}
-                          onChange={(event) =>
-                            setSealedPackSetCodes((current) =>
-                              current.map((item, itemIndex) =>
-                                itemIndex === index ? event.target.value : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
+                      <div className="pack-config" key={index}>
+                        <label>
+                          Pack {index + 1}
+                          <input
+                            value={code}
+                            onChange={(event) =>
+                              setSealedPackSetCodes((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index ? event.target.value : item,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
                     ))}
                   </div>
+                  <label className="bonus-rare-toggle">
+                    <input
+                      type="checkbox"
+                      checked={includeBonusRare}
+                      onChange={(event) => setIncludeBonusRare(event.target.checked)}
+                    />
+                    Add a bonus rare/mythic
+                  </label>
+                  {includeBonusRare && (
+                    <div className="bonus-rare-options">
+                      <label>
+                        Rarity
+                        <select
+                          value={bonusRareRarityMode}
+                          onChange={(event) =>
+                            setBonusRareRarityMode(event.target.value as BonusRareRarityMode)
+                          }
+                        >
+                          <option value="rare-mythic">Rare or mythic</option>
+                          <option value="mythic">Mythic only</option>
+                        </select>
+                      </label>
+                      <label className="checkbox-line">
+                        <input
+                          type="checkbox"
+                          checked={bonusRareCreaturesOnly}
+                          onChange={(event) => setBonusRareCreaturesOnly(event.target.checked)}
+                        />
+                        Creatures only
+                      </label>
+                      <label className="checkbox-line">
+                        <input
+                          type="checkbox"
+                          checked={bonusRareFromOtherSet}
+                          onChange={(event) => setBonusRareFromOtherSet(event.target.checked)}
+                        />
+                        Pull from another set
+                      </label>
+                      {bonusRareFromOtherSet && (
+                        <label>
+                          Bonus set code
+                          <input
+                            list="limited-set-options"
+                            value={bonusRareSetCode}
+                            onChange={(event) => setBonusRareSetCode(event.target.value)}
+                            placeholder="random if blank"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
                   <button className="primary-action" onClick={openSealedPool} disabled={isLimitedLoading}>
-                    {isLimitedLoading ? "Opening..." : "Open 6 packs"}
+                    {isLimitedLoading ? "Opening..." : "Open 6 Play Boosters"}
                   </button>
                 </div>
               )}
@@ -2188,19 +2433,21 @@ function App() {
                   />
                   <div className="pack-grid pack-grid-compact">
                     {draftPackSetCodes.map((code, index) => (
-                      <label key={index}>
-                        Pack {index + 1}
-                        <input
-                          value={code}
-                          onChange={(event) =>
-                            setDraftPackSetCodes((current) =>
-                              current.map((item, itemIndex) =>
-                                itemIndex === index ? event.target.value : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
+                      <div className="pack-config" key={index}>
+                        <label>
+                          Pack {index + 1}
+                          <input
+                            value={code}
+                            onChange={(event) =>
+                              setDraftPackSetCodes((current) =>
+                                current.map((item, itemIndex) =>
+                                  itemIndex === index ? event.target.value : item,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
                     ))}
                   </div>
                   <button className="primary-action" onClick={startDraft} disabled={isLimitedLoading || !canUseDraftMode}>
@@ -2455,12 +2702,15 @@ function App() {
         {showLimitedWorkspace ? (
           <LimitedWorkspace
             mode={limitedMode}
+            sealedPacks={sealedPacks}
             pool={limitedPool}
             deck={limitedDeck}
             lands={limitedLands}
             draftPack={draftRound < 3 ? draftPacks[0] ?? [] : []}
             draftRound={draftRound}
             status={limitedStatus}
+            onOpenSealedPack={openSealedPack}
+            onOpenAllSealedPacks={openAllSealedPacks}
             onDraftPick={draftPick}
             onSelectCard={selectLimitedCard}
             onHoverCard={showLimitedCardPreview}
@@ -2973,6 +3223,7 @@ function JumpstartThemeSelect({
     <label className="limited-field">
       {label}
       <select value={value} onChange={(event) => onChange(event.target.value)} disabled={themes.length === 0}>
+        {themes.length === 0 && <option>No half-decks match</option>}
         {themesByProduct.map(([product, themes]) => (
           <optgroup key={product} label={product}>
             {themes.map((theme) => (
@@ -2984,6 +3235,47 @@ function JumpstartThemeSelect({
         ))}
       </select>
     </label>
+  );
+}
+
+function JumpstartFilterControls({
+  label,
+  filter,
+  products,
+  onChange,
+}: {
+  label: string;
+  filter: JumpstartFilter;
+  products: string[];
+  onChange: (update: Partial<JumpstartFilter>) => void;
+}) {
+  return (
+    <fieldset className="jumpstart-filter-controls">
+      <legend>{label}</legend>
+      <label>
+        Set
+        <select value={filter.product} onChange={(event) => onChange({ product: event.target.value })}>
+          {products.map((product) => (
+            <option key={product} value={product}>
+              {product}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Colour
+        <select value={filter.color} onChange={(event) => onChange({ color: event.target.value })}>
+          <option value="All">All</option>
+          <option value="W">White</option>
+          <option value="U">Blue</option>
+          <option value="B">Black</option>
+          <option value="R">Red</option>
+          <option value="G">Green</option>
+          <option value="C">Colorless</option>
+          <option value="M">Multicolor</option>
+        </select>
+      </label>
+    </fieldset>
   );
 }
 
@@ -3007,12 +3299,15 @@ function JumpstartThemeCard({ theme }: { theme: JumpstartTheme }) {
 
 function LimitedWorkspace({
   mode,
+  sealedPacks,
   pool,
   deck,
   lands,
   draftPack,
   draftRound,
   status,
+  onOpenSealedPack,
+  onOpenAllSealedPacks,
   onDraftPick,
   onSelectCard,
   onHoverCard,
@@ -3023,12 +3318,15 @@ function LimitedWorkspace({
   isImporting,
 }: {
   mode: LimitedMode;
+  sealedPacks: SealedPackView[];
   pool: CardData[];
   deck: CardData[];
   lands: Record<string, number>;
   draftPack: CardData[];
   draftRound: number;
   status: string;
+  onOpenSealedPack: (packId: string) => void;
+  onOpenAllSealedPacks: () => void;
   onDraftPick: (index: number) => void;
   onSelectCard: (selection: LimitedSelection) => void;
   onHoverCard: (card: CardData, event: MouseEvent<HTMLElement>) => void;
@@ -3041,6 +3339,7 @@ function LimitedWorkspace({
   const landCount = Object.values(lands).reduce((sum, quantity) => sum + quantity, 0);
   const deckSize = deck.length + landCount;
   const stats = buildDeckStatsFromLimited(deck, lands);
+  const unopenedSealedPacks = sealedPacks.filter((pack) => !pack.opened);
 
   return (
     <section className="limited-workspace" aria-label="Limited deck builder">
@@ -3076,6 +3375,66 @@ function LimitedWorkspace({
               />
             ))}
           </div>
+        </section>
+      )}
+
+      {mode === "sealed" && sealedPacks.length > 0 && (
+        <section className="sealed-pack-strip">
+          <header>
+            <div>
+              <strong>Sealed packs</strong>
+              <span>{unopenedSealedPacks.length} unopened</span>
+            </div>
+            <button onClick={onOpenAllSealedPacks} disabled={unopenedSealedPacks.length === 0}>
+              Open all
+            </button>
+          </header>
+          <div>
+            {sealedPacks.map((pack) => (
+              <button
+                key={pack.id}
+                className={`sealed-pack ${pack.opened ? "is-opened" : ""} ${pack.isBonus ? "is-bonus" : ""}`}
+                onClick={() => onOpenSealedPack(pack.id)}
+                disabled={pack.opened}
+                style={{
+                  "--set-icon": pack.iconUrl ? `url("${pack.iconUrl}")` : "none",
+                } as CSSProperties}
+              >
+                <span>{pack.label}</span>
+                <strong>{pack.isBonus ? "Rare+" : pack.setCode.toUpperCase()}</strong>
+                <small>{pack.opened ? "Opened" : "Open pack"}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {mode === "sealed" && sealedPacks.some((pack) => pack.opened) && (
+        <section className="sealed-pack-contents" aria-label="Opened pack contents">
+          {sealedPacks
+            .filter((pack) => pack.opened)
+            .map((pack) => (
+              <article key={`${pack.id}-contents`}>
+                <header>
+                  <strong>{pack.label}</strong>
+                  <span>{pack.isBonus ? "Bonus rare" : `${pack.setCode.toUpperCase()} Play Booster`}</span>
+                </header>
+                <div>
+                  {pack.cards.map((card, index) => (
+                    <LimitedImageCard
+                      key={`${pack.id}-${card.id}-${index}`}
+                      card={card}
+                      source="pool"
+                      actionLabel="View"
+                      draggableCard={false}
+                      onClick={() => onSelectCard({ card, source: "pool" })}
+                      onHover={(event) => onHoverCard(card, event)}
+                      onLeave={onLeaveCard}
+                    />
+                  ))}
+                </div>
+              </article>
+            ))}
         </section>
       )}
 
@@ -3206,7 +3565,7 @@ function LimitedImageGroups({
 
   return (
     <section
-      className={`limited-card-groups ${compact ? "is-compact" : ""}`}
+      className={`limited-card-groups is-${source} ${compact ? "is-compact" : ""}`}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -3255,6 +3614,7 @@ function LimitedImageCard({
   onDoubleClick,
   onHover,
   onLeave,
+  draggableCard = true,
 }: {
   card: CardData;
   source: LimitedCardSource;
@@ -3263,12 +3623,16 @@ function LimitedImageCard({
   onDoubleClick?: () => void;
   onHover?: (event: MouseEvent<HTMLElement>) => void;
   onLeave?: () => void;
+  draggableCard?: boolean;
 }) {
   return (
     <button
-      className="limited-image-card"
-      draggable
+      className={`limited-image-card rarity-${card.rarity ?? "unknown"} ${draggableCard ? "" : "is-view-only"}`}
+      draggable={draggableCard}
       onDragStart={(event) => {
+        if (!draggableCard) {
+          return;
+        }
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/json", JSON.stringify({ card, source }));
       }}
@@ -4487,6 +4851,16 @@ function groupJumpstartThemesByProduct(themes: JumpstartTheme[]): Array<[string,
     groups.set(product, [...(groups.get(product) ?? []), theme]);
   });
   return Array.from(groups.entries());
+}
+
+function filterJumpstartThemesBy(filter: JumpstartFilter) {
+  return jumpstartThemes.filter((theme) => {
+    const product = theme.product ?? "Jumpstart";
+    return (
+      (filter.product === "All" || product === filter.product) &&
+      (filter.color === "All" || theme.color === filter.color)
+    );
+  });
 }
 
 function rotateDraftPacks(packs: CardData[][], direction: 1 | -1) {
