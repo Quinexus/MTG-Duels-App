@@ -28,6 +28,19 @@ import {
 import { preconDecks, randomPrecon } from "./precons";
 import archidektCatalog from "./archidekt-precons.json";
 import {
+  basicLandNames,
+  cardPoolToDecklist,
+  createBooster,
+  createSealedPool,
+  fetchSetCards,
+  groupLimitedCards,
+  jumpstartDecklist,
+  jumpstartThemes,
+  popularLimitedSets,
+  randomJumpstartThemeIds,
+  type JumpstartTheme,
+} from "./limited";
+import {
   fetchCardFromScryfallInput,
   fetchCardsForDeckLines,
   fetchRelatedTokensForCards,
@@ -121,8 +134,26 @@ const initialState: GameState = {
   commanderTax: 0,
 };
 
-type LeftTool = "room" | "deck" | "actions";
+type LeftTool = "room" | "deck" | "limited" | "actions";
 type RightTool = "card" | "damage" | "log" | "chat";
+type LimitedMode = "jumpstart" | "sealed" | "draft";
+type LimitedCardSource = "pool" | "deck" | "draft";
+type LimitedSelection = {
+  card: CardData;
+  source: LimitedCardSource;
+  draftIndex?: number;
+  displayBack?: boolean;
+};
+type ManaColor = "W" | "U" | "B" | "R" | "G";
+type DeckStats = {
+  totalCards: number;
+  averageManaValue: number;
+  manaCosts: Record<ManaColor, number>;
+  manaProduction: Record<ManaColor, number>;
+  curve: Array<{ label: string; count: number }>;
+};
+
+const manaColors: ManaColor[] = ["W", "U", "B", "R", "G"];
 
 function App() {
   const [initialPrecon] = useState(randomPrecon);
@@ -148,6 +179,34 @@ function App() {
   const [selectedCatalogUrl, setSelectedCatalogUrl] = useState(
     archidektCatalog.decks[0]?.url ?? "",
   );
+  const [limitedMode, setLimitedMode] = useState<LimitedMode>("jumpstart");
+  const [jumpstartThemeIds, setJumpstartThemeIds] = useState(() =>
+    randomJumpstartThemeIds(),
+  );
+  const [jumpstartProductFilter, setJumpstartProductFilter] = useState("All");
+  const [jumpstartColorFilter, setJumpstartColorFilter] = useState("All");
+  const [limitedSetCode, setLimitedSetCode] = useState<string>(popularLimitedSets[0].code);
+  const [sealedPackSetCodes, setSealedPackSetCodes] = useState<string[]>(() =>
+    Array.from({ length: 6 }, () => popularLimitedSets[0].code),
+  );
+  const [draftPackSetCodes, setDraftPackSetCodes] = useState<string[]>(() =>
+    Array.from({ length: 3 }, () => popularLimitedSets[0].code),
+  );
+  const [limitedCardsBySet, setLimitedCardsBySet] = useState<Record<string, CardData[]>>({});
+  const [limitedPool, setLimitedPool] = useState<CardData[]>([]);
+  const [limitedDeck, setLimitedDeck] = useState<CardData[]>([]);
+  const [limitedLands, setLimitedLands] = useState<Record<string, number>>(() =>
+    Object.fromEntries(basicLandNames.map((name) => [name, 0])),
+  );
+  const [limitedStatus, setLimitedStatus] = useState(
+    "Pick Jumpstart themes or open a Limited pool.",
+  );
+  const [isLimitedLoading, setIsLimitedLoading] = useState(false);
+  const [draftPlayers, setDraftPlayers] = useState(4);
+  const [draftSeats, setDraftSeats] = useState<CardData[][]>([]);
+  const [draftPacks, setDraftPacks] = useState<CardData[][]>([]);
+  const [draftRound, setDraftRound] = useState(0);
+  const [limitedSelection, setLimitedSelection] = useState<LimitedSelection>();
   const [game, setGame] = useState<GameState>(initialState);
   const [status, setStatus] = useState("Paste a decklist, import, then draw.");
   const [isLoading, setIsLoading] = useState(false);
@@ -212,9 +271,28 @@ function App() {
       ? "relay connected"
       : transportStatus === "connecting"
         ? "relay connecting"
-        : transportStatus === "error"
-          ? "relay unavailable"
-          : "local tabs";
+      : transportStatus === "error"
+        ? "relay unavailable"
+        : "local tabs";
+  const canUseDraftMode = mode === "multiplayer" && isConnected && peers.length + 1 >= 2;
+  const showLimitedWorkspace =
+    leftTool === "limited" &&
+    (limitedMode === "sealed" || limitedMode === "draft") &&
+    (limitedPool.length > 0 || limitedDeck.length > 0 || draftPacks[0]?.length > 0);
+  const jumpstartProducts = useMemo(
+    () => ["All", ...Array.from(new Set(jumpstartThemes.map((theme) => theme.product ?? "Jumpstart")))],
+    [],
+  );
+  const filteredJumpstartThemes = useMemo(
+    () =>
+      jumpstartThemes.filter(
+        (theme) =>
+          (jumpstartProductFilter === "All" || theme.product === jumpstartProductFilter) &&
+          (jumpstartColorFilter === "All" || theme.color === jumpstartColorFilter),
+      ),
+    [jumpstartColorFilter, jumpstartProductFilter],
+  );
+  const deckStats = useMemo(() => buildDeckStatsFromGame(game), [game]);
 
   const selected = game.instances.find((card) => card.instanceId === game.selectedId);
   const selectedData = selected ? game.cardsById[selected.cardId] : undefined;
@@ -384,6 +462,27 @@ function App() {
   }, [buildJoinMessage, isConnected, playerName, postLobbyMessage, publishState]);
 
   useEffect(() => {
+    if (limitedMode === "draft" && !canUseDraftMode) {
+      setLimitedMode("sealed");
+      setLimitedStatus("Draft needs a lobby with at least two connected players.");
+    }
+  }, [canUseDraftMode, limitedMode]);
+
+  useEffect(() => {
+    if (filteredJumpstartThemes.length === 0) {
+      return;
+    }
+
+    setJumpstartThemeIds((current) =>
+      current.map((id, index) =>
+        filteredJumpstartThemes.some((theme) => theme.id === id)
+          ? id
+          : filteredJumpstartThemes[index % filteredJumpstartThemes.length].id,
+      ),
+    );
+  }, [filteredJumpstartThemes]);
+
+  useEffect(() => {
     const action = game.actions[0];
     if (!isConnected || !action || remoteActionIdsRef.current.has(action.id)) {
       return;
@@ -404,7 +503,11 @@ function App() {
   }, [game.actions, isConnected, playerId, playerName, postLobbyMessage]);
 
   async function importDeck() {
-    const lines = parseDeckList(deckInput);
+    await importDeckText(deckInput);
+  }
+
+  async function importDeckText(input: string, sourceLabel = "Deck") {
+    const lines = parseDeckList(input);
     const names = uniqueCardNames(lines);
 
     if (names.length === 0) {
@@ -451,13 +554,191 @@ function App() {
       setStatus(
         missing.length
           ? `Imported with ${missing.length} missing card name${missing.length === 1 ? "" : "s"}.`
-          : "Deck imported and shuffled.",
+          : `${sourceLabel} imported and shuffled.`,
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Import failed.");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function chooseJumpstartTheme(slot: 0 | 1, themeId: string) {
+    setJumpstartThemeIds((current) => current.map((id, index) => (index === slot ? themeId : id)));
+  }
+
+  function randomizeJumpstart() {
+    const source = filteredJumpstartThemes.length ? filteredJumpstartThemes : jumpstartThemes;
+    const nextIds = shuffleCards(source).slice(0, 2).map((theme) => theme.id);
+    setJumpstartThemeIds(nextIds);
+    const names = nextIds
+      .map((id) => jumpstartThemes.find((theme) => theme.id === id)?.name)
+      .filter(Boolean)
+      .join(" + ");
+    setLimitedStatus(`Random Jumpstart: ${names}.`);
+  }
+
+  async function importJumpstartDeck() {
+    const list = jumpstartDecklist(jumpstartThemeIds);
+    setDeckInput(list);
+    setSelectedPreconId("");
+    setLimitedStatus("Jumpstart decklist is ready in the importer and loading to the table.");
+    await importDeckText(list, "Jumpstart deck");
+  }
+
+  async function ensureLimitedSets(setCodes: string[]) {
+    const uniqueCodes = Array.from(new Set(setCodes.map((code) => code.trim().toLowerCase())));
+    const missing = uniqueCodes.filter((code) => !limitedCardsBySet[code]);
+    if (missing.length === 0) {
+      return limitedCardsBySet;
+    }
+
+    const loadedEntries = await Promise.all(
+      missing.map(async (code) => [code, await fetchSetCards(code)] as const),
+    );
+    const next = {
+      ...limitedCardsBySet,
+      ...Object.fromEntries(loadedEntries),
+    };
+    setLimitedCardsBySet(next);
+    return next;
+  }
+
+  async function openSealedPool() {
+    const packSets = sealedPackSetCodes.map((code) => code.trim().toLowerCase());
+    if (packSets.some((code) => !code)) {
+      setLimitedStatus("Every sealed pack needs a set code.");
+      return;
+    }
+
+    setIsLimitedLoading(true);
+    setLimitedStatus(`Fetching ${Array.from(new Set(packSets)).join(", ").toUpperCase()} cards...`);
+    try {
+      const cardsBySet = await ensureLimitedSets(packSets);
+      const pool = createSealedPool(cardsBySet, packSets);
+      setLimitedPool(pool);
+      setLimitedDeck([]);
+      setLimitedLands(Object.fromEntries(basicLandNames.map((name) => [name, 0])));
+      setLimitedStatus(`Opened ${pool.length} cards from 6 packs. Build at least 40 with lands.`);
+    } catch (error) {
+      setLimitedStatus(error instanceof Error ? error.message : "Could not open sealed pool.");
+    } finally {
+      setIsLimitedLoading(false);
+    }
+  }
+
+  async function startDraft() {
+    if (!canUseDraftMode) {
+      setLimitedStatus("Draft needs a lobby with at least two connected players.");
+      return;
+    }
+
+    const packSets = draftPackSetCodes.map((code) => code.trim().toLowerCase());
+    const seatCount = Math.max(2, Math.min(8, draftPlayers));
+    setIsLimitedLoading(true);
+    setLimitedStatus(`Preparing ${seatCount}-seat draft...`);
+    try {
+      const cardsBySet = await ensureLimitedSets(packSets);
+      const firstRoundPacks = Array.from({ length: seatCount }, () =>
+        createBooster(cardsBySet[packSets[0]] ?? []),
+      );
+      setDraftSeats(Array.from({ length: seatCount }, () => []));
+      setDraftPacks(firstRoundPacks);
+      setDraftRound(0);
+      setLimitedPool([]);
+      setLimitedDeck([]);
+      setLimitedStatus(
+        `${seatCount}-seat draft started. You are Seat 1; other seats auto-pick when you take a card.`,
+      );
+    } catch (error) {
+      setLimitedStatus(error instanceof Error ? error.message : "Could not start draft.");
+    } finally {
+      setIsLimitedLoading(false);
+    }
+  }
+
+  function draftPick(cardIndex: number) {
+    setDraftPacks((currentPacks) => {
+      if (!currentPacks[0]?.[cardIndex]) {
+        return currentPacks;
+      }
+
+      let packs = currentPacks.map((pack) => [...pack]);
+      const picked = packs[0].splice(cardIndex, 1)[0];
+      const nextSeats = draftSeats.map((seat) => [...seat]);
+      nextSeats[0].push(picked);
+
+      for (let seat = 1; seat < packs.length; seat += 1) {
+        const botPick = chooseBotDraftIndex(packs[seat]);
+        if (botPick >= 0) {
+          nextSeats[seat].push(packs[seat].splice(botPick, 1)[0]);
+        }
+      }
+
+      if (packs.every((pack) => pack.length === 0)) {
+        const nextRound = draftRound + 1;
+        const packSets = draftPackSetCodes.map((code) => code.trim().toLowerCase());
+        if (nextRound >= 3) {
+          setDraftSeats(nextSeats);
+          setLimitedPool(nextSeats[0]);
+          setLimitedDeck([]);
+          setDraftRound(nextRound);
+          setLimitedStatus("Draft complete. Build your 40-card deck from your picks.");
+          return packs;
+        }
+
+        const nextPacks = Array.from({ length: packs.length }, () =>
+          createBooster(limitedCardsBySet[packSets[nextRound]] ?? []),
+        );
+        setDraftSeats(nextSeats);
+        setDraftRound(nextRound);
+        setLimitedStatus(`Pack ${nextRound + 1} opened. Passing ${nextRound === 1 ? "right" : "left"}.`);
+        return nextPacks;
+      }
+
+      const direction = draftRound === 1 ? -1 : 1;
+      packs = rotateDraftPacks(packs, direction);
+      setDraftSeats(nextSeats);
+      setLimitedSelection({ card: picked, source: "draft" });
+      setLimitedStatus(
+        `Picked ${picked.name}. ${packs[0]?.length ?? 0} cards in the current pack.`,
+      );
+      return packs;
+    });
+  }
+
+  async function importLimitedDeck() {
+    const total = limitedDeck.length + Object.values(limitedLands).reduce((sum, qty) => sum + qty, 0);
+    if (total < 40) {
+      setLimitedStatus(`Limited decks need at least 40 cards. Current build has ${total}.`);
+      return;
+    }
+
+    const list = cardPoolToDecklist(limitedDeck, limitedLands);
+    setDeckInput(list);
+    setSelectedPreconId("");
+    setLimitedStatus("Limited decklist is ready in the importer and loading to the table.");
+    await importDeckText(list, `${limitedMode === "draft" ? "Draft" : "Sealed"} deck`);
+  }
+
+  function toggleLimitedCard(card: CardData, destination: "deck" | "pool") {
+    if (destination === "deck") {
+      setLimitedPool((current) => removeOneCard(current, card.id));
+      setLimitedDeck((current) => [...current, card]);
+      setLimitedSelection({ card, source: "deck" });
+      return;
+    }
+
+    setLimitedDeck((current) => removeOneCard(current, card.id));
+    setLimitedPool((current) => [...current, card]);
+    setLimitedSelection({ card, source: "pool" });
+  }
+
+  function updateLimitedLand(name: string, delta: number) {
+    setLimitedLands((current) => ({
+      ...current,
+      [name]: Math.max(0, (current[name] ?? 0) + delta),
+    }));
   }
 
   async function importUrlToTextbox() {
@@ -781,6 +1062,7 @@ function App() {
     }
 
     setSelectedRemote(undefined);
+    setLimitedSelection(undefined);
     setGame((current) => ({
       ...current,
       selectedId: card.instanceId,
@@ -1045,6 +1327,17 @@ function App() {
     event: MouseEvent<HTMLElement>,
   ) {
     showPreview(data, card, event);
+  }
+
+  function showLimitedCardPreview(card: CardData, event: MouseEvent<HTMLElement>) {
+    showPreview(card, { faceDown: false, displayBack: false }, event);
+  }
+
+  function selectLimitedCard(selection: LimitedSelection) {
+    setLimitedSelection(selection);
+    setSelectedRemote(undefined);
+    setGame((current) => ({ ...current, selectedId: undefined }));
+    openRightTool("card");
   }
 
   function showPreview(
@@ -1515,7 +1808,7 @@ function App() {
         <div className="panel-titlebar">
           <div>
             <span>Table tools</span>
-            <small>Room, deck, actions</small>
+            <small>Room, deck, limited, actions</small>
           </div>
           <button onClick={() => setLeftPanelOpen(false)}>Close</button>
         </div>
@@ -1532,6 +1825,12 @@ function App() {
             onClick={() => setLeftTool("deck")}
           >
             Deck
+          </button>
+          <button
+            className={leftTool === "limited" ? "is-active" : ""}
+            onClick={() => setLeftTool("limited")}
+          >
+            Limited
           </button>
           <button
             className={leftTool === "actions" ? "is-active" : ""}
@@ -1676,6 +1975,183 @@ function App() {
                 {isLoading ? "Importing..." : "Import from Scryfall"}
               </button>
               <p className="status-line">{status}</p>
+              <DeckStatsPanel stats={deckStats} compact />
+            </section>
+          )}
+
+          {leftTool === "limited" && (
+            <section className="limited-panel" aria-label="Limited formats">
+              <p className="eyebrow">Limited setup</p>
+              <div className="mode-switch">
+                <button
+                  className={limitedMode === "jumpstart" ? "is-active" : ""}
+                  onClick={() => setLimitedMode("jumpstart")}
+                >
+                  Jumpstart
+                </button>
+                <button
+                  className={limitedMode === "sealed" ? "is-active" : ""}
+                  onClick={() => setLimitedMode("sealed")}
+                >
+                  Sealed
+                </button>
+                <button
+                  className={limitedMode === "draft" ? "is-active" : ""}
+                  disabled={!canUseDraftMode}
+                  onClick={() => setLimitedMode("draft")}
+                  title={
+                    canUseDraftMode
+                      ? "Draft in this lobby"
+                      : "Join a lobby with at least two players to draft"
+                  }
+                >
+                  Draft
+                </button>
+              </div>
+
+              {limitedMode === "jumpstart" && (
+                <div className="limited-section">
+                  <p className="status-line">
+                    Choose from {jumpstartThemes.length} local half-decks or roll randomly.
+                    The merged 40-card list imports straight to the table.
+                  </p>
+                  <div className="jumpstart-filters">
+                    <label>
+                      Set
+                      <select
+                        value={jumpstartProductFilter}
+                        onChange={(event) => setJumpstartProductFilter(event.target.value)}
+                      >
+                        {jumpstartProducts.map((product) => (
+                          <option key={product} value={product}>
+                            {product === "All" ? "All Jumpstart sets" : product}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Color
+                      <select
+                        value={jumpstartColorFilter}
+                        onChange={(event) => setJumpstartColorFilter(event.target.value)}
+                      >
+                        <option value="All">All colors</option>
+                        <option value="W">White</option>
+                        <option value="U">Blue</option>
+                        <option value="B">Black</option>
+                        <option value="R">Red</option>
+                        <option value="G">Green</option>
+                        <option value="C">Colorless</option>
+                        <option value="M">Multicolor</option>
+                      </select>
+                    </label>
+                  </div>
+                  <JumpstartThemeSelect
+                    label="Theme 1"
+                    value={jumpstartThemeIds[0]}
+                    themes={filteredJumpstartThemes}
+                    onChange={(themeId) => chooseJumpstartTheme(0, themeId)}
+                  />
+                  <JumpstartThemeSelect
+                    label="Theme 2"
+                    value={jumpstartThemeIds[1]}
+                    themes={filteredJumpstartThemes}
+                    onChange={(themeId) => chooseJumpstartTheme(1, themeId)}
+                  />
+                  <div className="limited-actions">
+                    <button onClick={randomizeJumpstart}>Random themes</button>
+                    <button className="primary-action" onClick={importJumpstartDeck} disabled={isLoading}>
+                      Import Jumpstart
+                    </button>
+                  </div>
+                  <div className="jumpstart-theme-readout">
+                    {jumpstartThemeIds.map((id) => {
+                      const theme = jumpstartThemes.find((item) => item.id === id);
+                      return theme ? <JumpstartThemeCard key={id} theme={theme} /> : null;
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {limitedMode === "sealed" && (
+                <div className="limited-section">
+                  <label htmlFor="sealed-set">Set shortcut</label>
+                  <select
+                    id="sealed-set"
+                    value={limitedSetCode}
+                    onChange={(event) => {
+                      setLimitedSetCode(event.target.value);
+                      setSealedPackSetCodes(Array.from({ length: 6 }, () => event.target.value));
+                    }}
+                  >
+                    {popularLimitedSets.map((set) => (
+                      <option key={set.code} value={set.code}>
+                        {set.name} ({set.code.toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pack-grid">
+                    {sealedPackSetCodes.map((code, index) => (
+                      <label key={index}>
+                        Pack {index + 1}
+                        <input
+                          value={code}
+                          onChange={(event) =>
+                            setSealedPackSetCodes((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index ? event.target.value : item,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <button className="primary-action" onClick={openSealedPool} disabled={isLimitedLoading}>
+                    {isLimitedLoading ? "Opening..." : "Open 6 packs"}
+                  </button>
+                </div>
+              )}
+
+              {limitedMode === "draft" && (
+                <div className="limited-section">
+                  <p className="status-line">
+                    Seat 1 is you. Draft unlocks in lobby with at least two connected players;
+                    empty seats are auto-picked for now.
+                  </p>
+                  <label htmlFor="draft-players">Seats</label>
+                  <input
+                    id="draft-players"
+                    type="number"
+                    min="2"
+                    max="8"
+                    value={draftPlayers}
+                    onChange={(event) => setDraftPlayers(sanitizeCount(Number(event.target.value), 4))}
+                  />
+                  <div className="pack-grid pack-grid-compact">
+                    {draftPackSetCodes.map((code, index) => (
+                      <label key={index}>
+                        Pack {index + 1}
+                        <input
+                          value={code}
+                          onChange={(event) =>
+                            setDraftPackSetCodes((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index ? event.target.value : item,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <button className="primary-action" onClick={startDraft} disabled={isLimitedLoading || !canUseDraftMode}>
+                    {isLimitedLoading ? "Preparing..." : "Start draft"}
+                  </button>
+                </div>
+              )}
+
+              <p className="status-line">{limitedStatus}</p>
             </section>
           )}
 
@@ -1900,6 +2376,7 @@ function App() {
                   }
                   onSelectCard={(cardId) => {
                     setSelectedRemote({ playerId: peer.playerId, cardId });
+                    setLimitedSelection(undefined);
                     setGame((current) => ({ ...current, selectedId: undefined }));
                   }}
                   onHoverCard={(card, event) =>
@@ -1917,6 +2394,25 @@ function App() {
           </section>
         )}
 
+        {showLimitedWorkspace ? (
+          <LimitedWorkspace
+            mode={limitedMode}
+            pool={limitedPool}
+            deck={limitedDeck}
+            lands={limitedLands}
+            draftPack={draftRound < 3 ? draftPacks[0] ?? [] : []}
+            draftRound={draftRound}
+            status={limitedStatus}
+            onDraftPick={draftPick}
+            onSelectCard={selectLimitedCard}
+            onHoverCard={showLimitedCardPreview}
+            onLeaveCard={() => setHoverPreview(undefined)}
+            onMoveCard={(card, destination) => toggleLimitedCard(card, destination)}
+            onLandChange={updateLimitedLand}
+            onImport={importLimitedDeck}
+            isImporting={isLoading}
+          />
+        ) : (
         <div className="zones-grid">
           <p className="touch-hint">
             Touch: tap a card, then tap a zone to move it. In free move, tap the board spot.
@@ -2072,6 +2568,7 @@ function App() {
             </section>
           ))}
         </div>
+        )}
       </section>
 
       {rightPanelOpen && <aside className={`inspector inspector-${rightTool}`}>
@@ -2139,6 +2636,59 @@ function App() {
                 </div>
               )}
               <p className="empty-note">Opponent cards are read-only.</p>
+            </>
+          ) : limitedSelection ? (
+            <>
+              <div className="selected-preview">
+                {cardDisplayImage(limitedSelection.card, {
+                  faceDown: false,
+                  displayBack: limitedSelection.displayBack,
+                }) ? (
+                  <img
+                    src={cardDisplayImage(limitedSelection.card, {
+                      faceDown: false,
+                      displayBack: limitedSelection.displayBack,
+                    })}
+                    alt={limitedSelection.card.name}
+                  />
+                ) : (
+                  <div className="card-back">MTG</div>
+                )}
+              </div>
+              <p className="eyebrow">Limited card</p>
+              <h2>{limitedSelection.card.name}</h2>
+              <p>{limitedSelection.card.typeLine}</p>
+              {limitedSelection.card.oracleText && <pre>{limitedSelection.card.oracleText}</pre>}
+              <div className="card-actions">
+                {limitedSelection.card.backImageUrl && (
+                  <button
+                    onClick={() =>
+                      setLimitedSelection((current) =>
+                        current
+                          ? { ...current, displayBack: !current.displayBack }
+                          : current,
+                      )
+                    }
+                  >
+                    {limitedSelection.displayBack ? "Front side" : "Other side"}
+                  </button>
+                )}
+                {limitedSelection.source === "pool" && (
+                  <button onClick={() => toggleLimitedCard(limitedSelection.card, "deck")}>
+                    Add to deck
+                  </button>
+                )}
+                {limitedSelection.source === "deck" && (
+                  <button onClick={() => toggleLimitedCard(limitedSelection.card, "pool")}>
+                    Return to pool
+                  </button>
+                )}
+                {limitedSelection.source === "draft" && limitedSelection.draftIndex !== undefined && (
+                  <button onClick={() => draftPick(limitedSelection.draftIndex ?? 0)}>
+                    Draft this card
+                  </button>
+                )}
+              </div>
             </>
           ) : selected && selectedData ? (
             <>
@@ -2345,6 +2895,338 @@ function App() {
         </div>
       )}
     </main>
+  );
+}
+
+function JumpstartThemeSelect({
+  label,
+  value,
+  themes,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  themes: JumpstartTheme[];
+  onChange: (themeId: string) => void;
+}) {
+  const themesByProduct = groupJumpstartThemesByProduct(themes);
+
+  return (
+    <label className="limited-field">
+      {label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} disabled={themes.length === 0}>
+        {themesByProduct.map(([product, themes]) => (
+          <optgroup key={product} label={product}>
+            {themes.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.name} ({theme.color})
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function JumpstartThemeCard({ theme }: { theme: JumpstartTheme }) {
+  return (
+    <article>
+      <strong>{theme.name}</strong>
+      <span>
+        {theme.product ?? "Jumpstart"} · {theme.color} · {theme.deck.reduce((sum, line) => sum + line.quantity, 0)} cards
+      </span>
+      <small>
+        {theme.deck
+          .filter((line) => !basicLandNames.includes(line.name as (typeof basicLandNames)[number]))
+          .slice(0, 4)
+          .map((line) => line.name)
+          .join(", ")}
+      </small>
+    </article>
+  );
+}
+
+function LimitedWorkspace({
+  mode,
+  pool,
+  deck,
+  lands,
+  draftPack,
+  draftRound,
+  status,
+  onDraftPick,
+  onSelectCard,
+  onHoverCard,
+  onLeaveCard,
+  onMoveCard,
+  onLandChange,
+  onImport,
+  isImporting,
+}: {
+  mode: LimitedMode;
+  pool: CardData[];
+  deck: CardData[];
+  lands: Record<string, number>;
+  draftPack: CardData[];
+  draftRound: number;
+  status: string;
+  onDraftPick: (index: number) => void;
+  onSelectCard: (selection: LimitedSelection) => void;
+  onHoverCard: (card: CardData, event: MouseEvent<HTMLElement>) => void;
+  onLeaveCard: () => void;
+  onMoveCard: (card: CardData, destination: "deck" | "pool") => void;
+  onLandChange: (name: string, delta: number) => void;
+  onImport: () => void;
+  isImporting: boolean;
+}) {
+  const landCount = Object.values(lands).reduce((sum, quantity) => sum + quantity, 0);
+  const deckSize = deck.length + landCount;
+  const stats = buildDeckStatsFromLimited(deck, lands);
+
+  return (
+    <section className="limited-workspace" aria-label="Limited deck builder">
+      <div className="limited-workspace-header">
+        <div>
+          <p className="eyebrow">{mode === "draft" ? "Draft table" : "Sealed pool"}</p>
+          <h3>{mode === "draft" ? "Pick, then build" : "Build from your pool"}</h3>
+          <p>{status}</p>
+        </div>
+        <div className="limited-build-meter">
+          <strong>{deckSize}</strong>
+          <span>40 minimum</span>
+        </div>
+      </div>
+
+      {mode === "draft" && draftPack.length > 0 && (
+        <section className="limited-draft-strip">
+          <header>
+            <strong>Pack {draftRound + 1}</strong>
+            <span>Pick one, pass {draftRound === 1 ? "right" : "left"}</span>
+          </header>
+          <div>
+            {draftPack.map((card, index) => (
+              <LimitedImageCard
+                key={`${card.id}-${index}`}
+                card={card}
+                source="draft"
+                actionLabel="View"
+                onClick={() => onSelectCard({ card, source: "draft", draftIndex: index })}
+                onDoubleClick={() => onDraftPick(index)}
+                onHover={(event) => onHoverCard(card, event)}
+                onLeave={onLeaveCard}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="limited-build-layout">
+        <LimitedImageGroups
+          title="Pool"
+          cards={pool}
+          emptyText="Open packs to see your pool here."
+          dropText="Drop deck cards here"
+          source="pool"
+          onCardClick={(card) => onSelectCard({ card, source: "pool" })}
+          onCardDrop={(card, source) => {
+            if (source !== "pool") {
+              onMoveCard(card, "pool");
+            }
+          }}
+          onCardHover={onHoverCard}
+          onCardLeave={onLeaveCard}
+        />
+        <aside className="limited-deck-column">
+          <div className="land-station">
+            <header>
+              <strong>Basic lands</strong>
+              <span>{landCount} lands</span>
+            </header>
+            {basicLandNames.map((name) => (
+              <div key={name}>
+                <span>{name}</span>
+                <button onClick={() => onLandChange(name, -1)}>-</button>
+                <b>{lands[name] ?? 0}</b>
+                <button onClick={() => onLandChange(name, 1)}>+</button>
+              </div>
+            ))}
+          </div>
+          <LimitedImageGroups
+            title="Deck"
+            cards={deck}
+            emptyText="Drag cards here, or click cards in the pool."
+            dropText="Drop pool cards here"
+            source="deck"
+            onCardClick={(card) => onSelectCard({ card, source: "deck" })}
+            onCardDrop={(card, source) => {
+              if (source !== "deck") {
+                onMoveCard(card, "deck");
+              }
+            }}
+            onCardHover={onHoverCard}
+            onCardLeave={onLeaveCard}
+            compact
+          />
+          <button className="primary-action" onClick={onImport} disabled={isImporting || deckSize < 40}>
+            {isImporting ? "Importing..." : "Import Limited deck"}
+          </button>
+          <DeckStatsPanel stats={stats} compact />
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function DeckStatsPanel({ stats, compact }: { stats: DeckStats; compact?: boolean }) {
+  return (
+    <section className={`deck-stats ${compact ? "is-compact" : ""}`} aria-label="Deck stats">
+      <header>
+        <strong>Deck stats</strong>
+        <span>{stats.totalCards} cards · avg MV {stats.averageManaValue.toFixed(2)}</span>
+      </header>
+      <div className="mana-stat-grid">
+        <ManaPipRow title="Costs" values={stats.manaCosts} />
+        <ManaPipRow title="Sources" values={stats.manaProduction} />
+      </div>
+      <div className="mana-curve">
+        {stats.curve.map((entry) => (
+          <div key={entry.label}>
+            <span>{entry.label}</span>
+            <b style={{ height: `${Math.max(8, entry.count * 7)}px` }} />
+            <small>{entry.count}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ManaPipRow({
+  title,
+  values,
+}: {
+  title: string;
+  values: Record<ManaColor, number>;
+}) {
+  return (
+    <div className="mana-pip-row">
+      <span>{title}</span>
+      {manaColors.map((color) => (
+        <b key={color} className={`mana-pip mana-pip-${color.toLowerCase()}`}>
+          {color} {values[color]}
+        </b>
+      ))}
+    </div>
+  );
+}
+
+function LimitedImageGroups({
+  title,
+  cards,
+  emptyText,
+  dropText,
+  source,
+  onCardClick,
+  onCardDrop,
+  onCardHover,
+  onCardLeave,
+  compact,
+}: {
+  title: string;
+  cards: CardData[];
+  emptyText: string;
+  dropText: string;
+  source: LimitedCardSource;
+  onCardClick: (card: CardData) => void;
+  onCardDrop: (card: CardData, source: LimitedCardSource) => void;
+  onCardHover: (card: CardData, event: MouseEvent<HTMLElement>) => void;
+  onCardLeave: () => void;
+  compact?: boolean;
+}) {
+  const groups = groupLimitedCards(cards).filter((group) => group.cards.length > 0);
+
+  return (
+    <section
+      className={`limited-card-groups ${compact ? "is-compact" : ""}`}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        const payload = parseDraggedLimitedCard(event);
+        if (payload && payload.source !== source) {
+          onCardDrop(payload.card, payload.source);
+        }
+      }}
+    >
+      <header>
+        <strong>{title}</strong>
+        <span>{cards.length} cards</span>
+      </header>
+      {groups.length ? (
+        groups.map((group) => (
+          <div key={group.id} className="limited-card-group">
+            <p>{group.label}</p>
+            <div>
+              {group.cards.map((card, index) => (
+                <LimitedImageCard
+                  key={`${card.id}-${index}`}
+                  card={card}
+                  source={source}
+                  actionLabel="View"
+                  onClick={() => onCardClick(card)}
+                  onHover={(event) => onCardHover(card, event)}
+                  onLeave={onCardLeave}
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <p className="empty-note">{emptyText}</p>
+      )}
+      <small className="limited-drop-hint">{dropText}</small>
+    </section>
+  );
+}
+
+function LimitedImageCard({
+  card,
+  source,
+  actionLabel,
+  onClick,
+  onDoubleClick,
+  onHover,
+  onLeave,
+}: {
+  card: CardData;
+  source: LimitedCardSource;
+  actionLabel: string;
+  onClick: () => void;
+  onDoubleClick?: () => void;
+  onHover?: (event: MouseEvent<HTMLElement>) => void;
+  onLeave?: () => void;
+}) {
+  return (
+    <button
+      className="limited-image-card"
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/json", JSON.stringify({ card, source }));
+      }}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      onMouseMove={onHover}
+      onMouseLeave={onLeave}
+      title={`${actionLabel} ${card.name}`}
+    >
+      {card.imageUrl ? (
+        <img src={card.imageUrl} alt={card.name} loading="lazy" />
+      ) : (
+        <span>{card.name}</span>
+      )}
+      <em>{actionLabel}</em>
+    </button>
   );
 }
 
@@ -3411,6 +4293,172 @@ function isPublicActionText(text: string) {
   ];
 
   return !privatePatterns.some((pattern) => pattern.test(text));
+}
+
+function buildDeckStatsFromGame(game: GameState): DeckStats {
+  const cards = game.instances
+    .filter((instance) => instance.zone !== "tokenBank" && !instance.isGenerated)
+    .map((instance) => game.cardsById[instance.cardId])
+    .filter((card): card is CardData => Boolean(card));
+
+  return buildDeckStats(cards);
+}
+
+function buildDeckStatsFromLimited(cards: CardData[], lands: Record<string, number>): DeckStats {
+  const landCards = Object.entries(lands).flatMap(([name, quantity]) =>
+    Array.from({ length: quantity }, () => basicLandCardData(name)),
+  );
+
+  return buildDeckStats([...cards, ...landCards]);
+}
+
+function buildDeckStats(cards: CardData[]): DeckStats {
+  const manaCosts = emptyManaColorCounts();
+  const manaProduction = emptyManaColorCounts();
+  const curveCounts = [0, 0, 0, 0, 0, 0, 0];
+  let manaValueTotal = 0;
+  let manaValueCards = 0;
+
+  cards.forEach((card) => {
+    countManaSymbols(card.manaCost, manaCosts);
+    countManaProduction(card, manaProduction);
+
+    if (!card.typeLine.toLowerCase().includes("land")) {
+      const curveIndex = Math.min(6, Math.max(0, Math.floor(card.cmc)));
+      curveCounts[curveIndex] += 1;
+      manaValueTotal += card.cmc;
+      manaValueCards += 1;
+    }
+  });
+
+  return {
+    totalCards: cards.length,
+    averageManaValue: manaValueCards ? manaValueTotal / manaValueCards : 0,
+    manaCosts,
+    manaProduction,
+    curve: curveCounts.map((count, index) => ({
+      label: index === 6 ? "6+" : String(index),
+      count,
+    })),
+  };
+}
+
+function emptyManaColorCounts(): Record<ManaColor, number> {
+  return { W: 0, U: 0, B: 0, R: 0, G: 0 };
+}
+
+function countManaSymbols(manaCost: string | undefined, counts: Record<ManaColor, number>) {
+  manaCost?.match(/\{[^}]+\}/g)?.forEach((symbol) => {
+    manaColors.forEach((color) => {
+      if (symbol.includes(color)) {
+        counts[color] += 1;
+      }
+    });
+  });
+}
+
+function countManaProduction(card: CardData, counts: Record<ManaColor, number>) {
+  const basicLandColor = basicLandProducedColor(card.name);
+  if (basicLandColor) {
+    counts[basicLandColor] += 1;
+    return;
+  }
+
+  const text = card.oracleText || "";
+  manaColors.forEach((color) => {
+    if (text.includes(`{${color}}`)) {
+      counts[color] += 1;
+    }
+  });
+}
+
+function basicLandProducedColor(name: string): ManaColor | undefined {
+  if (name === "Plains") {
+    return "W";
+  }
+  if (name === "Island") {
+    return "U";
+  }
+  if (name === "Swamp") {
+    return "B";
+  }
+  if (name === "Mountain") {
+    return "R";
+  }
+  if (name === "Forest") {
+    return "G";
+  }
+  return undefined;
+}
+
+function basicLandCardData(name: string): CardData {
+  return {
+    id: `basic-${name.toLowerCase()}`,
+    name,
+    typeLine: "Basic Land",
+    oracleText: "",
+    cmc: 0,
+  };
+}
+
+function removeOneCard(cards: CardData[], cardId: string) {
+  const index = cards.findIndex((card) => card.id === cardId);
+  if (index < 0) {
+    return cards;
+  }
+
+  return [...cards.slice(0, index), ...cards.slice(index + 1)];
+}
+
+function parseDraggedLimitedCard(
+  event: DragEvent<HTMLElement>,
+): { card: CardData; source: LimitedCardSource } | undefined {
+  try {
+    const value = event.dataTransfer.getData("application/json");
+    const parsed = value ? (JSON.parse(value) as Partial<{ card: CardData; source: LimitedCardSource }>) : undefined;
+    return parsed?.card && parsed.source ? { card: parsed.card, source: parsed.source } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function groupJumpstartThemesByProduct(themes: JumpstartTheme[]): Array<[string, JumpstartTheme[]]> {
+  const groups = new Map<string, JumpstartTheme[]>();
+  themes.forEach((theme) => {
+    const product = theme.product ?? "Jumpstart";
+    groups.set(product, [...(groups.get(product) ?? []), theme]);
+  });
+  return Array.from(groups.entries());
+}
+
+function rotateDraftPacks(packs: CardData[][], direction: 1 | -1) {
+  if (packs.length <= 1) {
+    return packs;
+  }
+
+  return packs.map((_, index) => {
+    const sourceIndex = (index - direction + packs.length) % packs.length;
+    return packs[sourceIndex];
+  });
+}
+
+function chooseBotDraftIndex(pack: CardData[]) {
+  if (pack.length === 0) {
+    return -1;
+  }
+
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+  pack.forEach((card, index) => {
+    const rarityScore = card.rarity === "mythic" ? 40 : card.rarity === "rare" ? 30 : card.rarity === "uncommon" ? 12 : 0;
+    const manaScore = Math.max(0, 8 - Math.abs((card.cmc ?? 3) - 3));
+    const score = rarityScore + manaScore + Math.random();
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
 }
 
 function getOrCreatePlayerId(): string {

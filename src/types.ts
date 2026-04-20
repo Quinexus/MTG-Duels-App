@@ -31,6 +31,11 @@ export type CardData = {
   oracleText: string;
   manaCost?: string;
   cmc: number;
+  colors?: string[];
+  colorIdentity?: string[];
+  rarity?: string;
+  setCode?: string;
+  collectorNumber?: string;
   imageUrl?: string;
   backImageUrl?: string;
   scryfallUri?: string;
@@ -165,6 +170,11 @@ export type ScryfallCard = {
   oracle_text?: string;
   mana_cost?: string;
   cmc?: number;
+  colors?: string[];
+  color_identity?: string[];
+  rarity?: string;
+  set?: string;
+  collector_number?: string;
   scryfall_uri?: string;
   all_parts?: Array<{
     id: string;
