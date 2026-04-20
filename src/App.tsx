@@ -134,6 +134,17 @@ const initialState: GameState = {
   commanderTax: 0,
 };
 
+const autosaveKey = "mtg-duels-autosave-v1";
+const playerIdKey = "mtg-duels-player-id";
+
+type AutosavedSession = {
+  version: 1;
+  savedAt: number;
+  playerName: string;
+  roomCode: string;
+  game: GameState;
+};
+
 type LeftTool = "room" | "deck" | "limited" | "actions";
 type RightTool = "card" | "damage" | "log" | "chat";
 type LimitedMode = "jumpstart" | "sealed" | "draft";
@@ -156,10 +167,11 @@ type DeckStats = {
 const manaColors: ManaColor[] = ["W", "U", "B", "R", "G"];
 
 function App() {
+  const [autosavedSession, setAutosavedSession] = useState(readAutosavedSession);
   const [initialPrecon] = useState(randomPrecon);
   const [playerId] = useState(getOrCreatePlayerId);
-  const [playerName, setPlayerName] = useState("Player");
-  const [roomCode, setRoomCode] = useState(createRoomCode);
+  const [playerName, setPlayerName] = useState(autosavedSession?.playerName ?? "Player");
+  const [roomCode, setRoomCode] = useState(autosavedSession?.roomCode ?? createRoomCode);
   const [isConnected, setIsConnected] = useState(false);
   const [mode, setMode] = useState<"solo" | "multiplayer">("solo");
   const [peersById, setPeersById] = useState<Record<string, PublicPlayerState>>({});
@@ -170,7 +182,8 @@ function App() {
   const [isRelaySettingsOpen, setIsRelaySettingsOpen] = useState(false);
   const [transportStatus, setTransportStatus] = useState<LobbyTransportStatus>("local");
   const transportRef = useRef<LobbyTransport | undefined>(undefined);
-  const gameRef = useRef<GameState>(initialState);
+  const gameRef = useRef<GameState>(autosavedSession?.game ?? initialState);
+  const autosaveTimeoutRef = useRef<number | undefined>(undefined);
   const remoteActionIdsRef = useRef(new Set<string>());
   const sharedActionIdsRef = useRef(new Set<string>());
   const [selectedPreconId, setSelectedPreconId] = useState(initialPrecon.id);
@@ -207,8 +220,12 @@ function App() {
   const [draftPacks, setDraftPacks] = useState<CardData[][]>([]);
   const [draftRound, setDraftRound] = useState(0);
   const [limitedSelection, setLimitedSelection] = useState<LimitedSelection>();
-  const [game, setGame] = useState<GameState>(initialState);
-  const [status, setStatus] = useState("Paste a decklist, import, then draw.");
+  const [game, setGame] = useState<GameState>(autosavedSession?.game ?? initialState);
+  const [status, setStatus] = useState(() =>
+    autosavedSession
+      ? `Autosaved board restored from ${formatSavedAt(autosavedSession.savedAt)}.`
+      : "Paste a decklist, import, then draw.",
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isUrlLoading, setIsUrlLoading] = useState(false);
   const [draggedId, setDraggedId] = useState<string>();
@@ -398,6 +415,27 @@ function App() {
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
+
+  useEffect(() => {
+    autosaveTimeoutRef.current = window.setTimeout(() => {
+      const nextAutosave: AutosavedSession = {
+        version: 1,
+        savedAt: Date.now(),
+        playerName: playerName.trim() || "Player",
+        roomCode: roomCode.trim().toUpperCase() || createRoomCode(),
+        game,
+      };
+      saveAutosavedSession(nextAutosave);
+      setAutosavedSession(nextAutosave);
+      autosaveTimeoutRef.current = undefined;
+    }, 250);
+
+    return () => {
+      if (autosaveTimeoutRef.current !== undefined) {
+        window.clearTimeout(autosaveTimeoutRef.current);
+      }
+    };
+  }, [game, playerName, roomCode]);
 
   useEffect(() => {
     if (!isConnected) {
@@ -1701,6 +1739,16 @@ function App() {
     setStatus("Back in solo sandbox mode.");
   }
 
+  function forgetAutosavedBoard() {
+    if (autosaveTimeoutRef.current !== undefined) {
+      window.clearTimeout(autosaveTimeoutRef.current);
+      autosaveTimeoutRef.current = undefined;
+    }
+    clearAutosavedSession();
+    setAutosavedSession(undefined);
+    setStatus("Autosaved board forgotten. Your current table stays open.");
+  }
+
   function sendChat() {
     const text = chatInput.trim();
     if (!text || !isConnected) {
@@ -1917,6 +1965,16 @@ function App() {
                   </div>
                 ) : (
                   <p className="status-line">Solo mode stays local and private.</p>
+                )}
+                {autosavedSession && (
+                  <div className="autosave-row">
+                    <p className="status-line">
+                      Board autosaved {formatSavedAt(autosavedSession.savedAt)}.
+                    </p>
+                    <button type="button" onClick={forgetAutosavedBoard}>
+                      Forget save
+                    </button>
+                  </div>
                 )}
               </section>
             </>
@@ -4461,8 +4519,95 @@ function chooseBotDraftIndex(pack: CardData[]) {
   return bestIndex;
 }
 
+function readAutosavedSession(): AutosavedSession | undefined {
+  try {
+    const raw = window.localStorage.getItem(autosaveKey);
+    if (!raw) {
+      return undefined;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<AutosavedSession>;
+    if (!isAutosavedSession(parsed)) {
+      return undefined;
+    }
+
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveAutosavedSession(session: AutosavedSession) {
+  try {
+    window.localStorage.setItem(autosaveKey, JSON.stringify(session));
+  } catch {
+    // Autosave should never interrupt table actions.
+  }
+}
+
+function clearAutosavedSession() {
+  try {
+    window.localStorage.removeItem(autosaveKey);
+  } catch {
+    // Nothing useful to do if storage is unavailable.
+  }
+}
+
+function isAutosavedSession(value: Partial<AutosavedSession>): value is AutosavedSession {
+  return (
+    value.version === 1 &&
+    typeof value.savedAt === "number" &&
+    typeof value.playerName === "string" &&
+    typeof value.roomCode === "string" &&
+    isGameState(value.game)
+  );
+}
+
+function isGameState(value: unknown): value is GameState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const state = value as Partial<GameState>;
+  return (
+    Boolean(state.cardsById) &&
+    typeof state.cardsById === "object" &&
+    Array.isArray(state.instances) &&
+    typeof state.life === "number" &&
+    typeof state.poison === "number" &&
+    typeof state.energy === "number" &&
+    typeof state.turn === "number" &&
+    typeof state.activeZone === "string" &&
+    Array.isArray(state.actions) &&
+    (state.battlefieldLayout === "lanes" || state.battlefieldLayout === "free") &&
+    Boolean(state.commanderDamage) &&
+    typeof state.commanderDamage === "object" &&
+    typeof state.commanderTax === "number"
+  );
+}
+
+function formatSavedAt(savedAt: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(savedAt));
+}
+
 function getOrCreatePlayerId(): string {
-  return crypto.randomUUID();
+  try {
+    const existing = window.localStorage.getItem(playerIdKey);
+    if (existing) {
+      return existing;
+    }
+
+    const next = crypto.randomUUID();
+    window.localStorage.setItem(playerIdKey, next);
+    return next;
+  } catch {
+    return crypto.randomUUID();
+  }
 }
 
 function createRoomCode(): string {

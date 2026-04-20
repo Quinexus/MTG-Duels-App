@@ -446,6 +446,27 @@ select:focus {
   font-weight: 850;
 }
 
+.autosave-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.autosave-row .status-line {
+  margin: 0;
+}
+
+.autosave-row button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+  background: #242822;
+  color: inherit;
+  cursor: pointer;
+}
+
 .precon-picker {
   grid-template-columns: minmax(0, 1fr) auto;
 }
