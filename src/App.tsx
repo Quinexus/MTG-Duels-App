@@ -76,6 +76,7 @@ const zones: Array<{ id: ZoneId; label: string; helper: string }> = [
 
 const publicZones = new Set<ZoneId>(["battlefield", "graveyard", "exile", "command"]);
 const privateZones = new Set<ZoneId>(["library", "hand", "sideboard"]);
+const maxPassSeats = 4;
 const battlefieldLanes: Array<{ id: BattlefieldLane; label: string; helper: string }> = [
   { id: "creatures", label: "Creatures", helper: "Attackers, blockers, tokens" },
   { id: "noncreatures", label: "Artifacts / enchantments", helper: "Engines, rocks, walkers" },
@@ -205,6 +206,7 @@ function App() {
     { id: "local-player-2", name: "Player 2", game: initialState },
   ]);
   const [activePassSeatId, setActivePassSeatId] = useState("local-player-1");
+  const [selectedPassSeatId, setSelectedPassSeatId] = useState("local-player-2");
   const [passDeviceSeatId, setPassDeviceSeatId] = useState<string>();
   const [isPrivateHidden, setIsPrivateHidden] = useState(false);
   const [peersById, setPeersById] = useState<Record<string, PublicPlayerState>>({});
@@ -316,6 +318,9 @@ function App() {
   const passDeviceSeat = passDeviceSeatId
     ? passSeats.find((seat) => seat.id === passDeviceSeatId)
     : undefined;
+  const passTargets = passSeats.filter((seat) => seat.id !== activePassSeatId);
+  const selectedPassSeat =
+    passTargets.find((seat) => seat.id === selectedPassSeatId) ?? passTargets[0];
   const passOpponentStates = useMemo(
     () =>
       passSeats
@@ -491,6 +496,16 @@ function App() {
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
+
+  useEffect(() => {
+    if (
+      passSeats.some((seat) => seat.id === selectedPassSeatId && seat.id !== activePassSeatId)
+    ) {
+      return;
+    }
+
+    setSelectedPassSeatId(passSeats.find((seat) => seat.id !== activePassSeatId)?.id ?? "");
+  }, [activePassSeatId, passSeats, selectedPassSeatId]);
 
   useEffect(() => {
     if (mode !== "pass") {
@@ -2028,6 +2043,31 @@ function App() {
     );
   }
 
+  function addPassSeat() {
+    if (passSeats.length >= maxPassSeats) {
+      return;
+    }
+
+    const usedNumbers = new Set(
+      passSeats
+        .map((seat) => Number(seat.name.match(/^Player (\d+)$/)?.[1]))
+        .filter((number) => Number.isFinite(number)),
+    );
+    const nextNumber =
+      Array.from({ length: maxPassSeats }, (_, index) => index + 1).find(
+        (number) => !usedNumbers.has(number),
+      ) ?? passSeats.length + 1;
+    const nextSeat = {
+      id: `local-player-${crypto.randomUUID()}`,
+      name: `Player ${nextNumber}`,
+      game: initialState,
+    };
+
+    setPassSeats((current) => [...current, nextSeat]);
+    setSelectedPassSeatId(nextSeat.id);
+    setStatus("Added a local pass-and-play seat.");
+  }
+
   function beginPassDevice(seatId: string) {
     setPassSeats((current) =>
       current.map((seat) =>
@@ -2060,13 +2100,12 @@ function App() {
     setIsPrivateHidden(false);
   }
 
-  function loadPassSeat(seatId: string) {
-    const seat = passSeats.find((item) => item.id === seatId);
-    if (!seat || seat.id === activePassSeatId) {
+  function loadSelectedPassSeat() {
+    if (!selectedPassSeat) {
       return;
     }
 
-    beginPassDevice(seat.id);
+    beginPassDevice(selectedPassSeat.id);
   }
 
   function forgetAutosavedBoard() {
@@ -2234,7 +2273,7 @@ function App() {
                     Goldfish
                   </button>
                   <button className={mode === "pass" ? "is-active" : ""} onClick={startPassPlay}>
-                    Pass-and-play
+                    PnP
                   </button>
                   <button
                     className={mode === "multiplayer" ? "is-active" : ""}
@@ -2301,6 +2340,18 @@ function App() {
                     <p className="status-line">
                       Active seat: <strong>{activePassSeat.name}</strong>. Private zones stay local to that seat.
                     </p>
+                    <div className="pass-seat-count">
+                      <span>
+                        {passSeats.length} / {maxPassSeats} players
+                      </span>
+                      <button
+                        type="button"
+                        onClick={addPassSeat}
+                        disabled={passSeats.length >= maxPassSeats}
+                      >
+                        Add player
+                      </button>
+                    </div>
                     <div className="pass-seat-list">
                       {passSeats.map((seat) => (
                         <div
@@ -2315,12 +2366,37 @@ function App() {
                           {seat.id === activePassSeatId ? (
                             <span>Active</span>
                           ) : (
-                            <button type="button" onClick={() => loadPassSeat(seat.id)}>
-                              Pass device
+                            <button
+                              type="button"
+                              className={seat.id === selectedPassSeat?.id ? "is-selected" : ""}
+                              onClick={() => setSelectedPassSeatId(seat.id)}
+                            >
+                              {seat.id === selectedPassSeat?.id ? "Selected" : "Select"}
                             </button>
                           )}
                         </div>
                       ))}
+                    </div>
+                    <div className="pass-target-row">
+                      <label htmlFor="pass-target">Pass to</label>
+                      <select
+                        id="pass-target"
+                        value={selectedPassSeat?.id ?? ""}
+                        onChange={(event) => setSelectedPassSeatId(event.target.value)}
+                      >
+                        {passTargets.map((seat) => (
+                          <option key={seat.id} value={seat.id}>
+                            {seat.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={loadSelectedPassSeat}
+                        disabled={!selectedPassSeat}
+                      >
+                        Pass device
+                      </button>
                     </div>
                     <div className="room-actions">
                       <button
@@ -2797,13 +2873,20 @@ function App() {
               >
                 {isPrivateHidden ? "Show private info" : "Hide private info"}
               </button>
-              {passSeats
-                .filter((seat) => seat.id !== activePassSeatId)
-                .map((seat) => (
-                  <button type="button" key={seat.id} onClick={() => beginPassDevice(seat.id)}>
-                    Pass to {seat.name}
-                  </button>
+              <select
+                value={selectedPassSeat?.id ?? ""}
+                onChange={(event) => setSelectedPassSeatId(event.target.value)}
+                aria-label="Pass device target"
+              >
+                {passTargets.map((seat) => (
+                  <option key={seat.id} value={seat.id}>
+                    {seat.name}
+                  </option>
                 ))}
+              </select>
+              <button type="button" onClick={loadSelectedPassSeat} disabled={!selectedPassSeat}>
+                Pass device
+              </button>
             </div>
           )}
           <div className="trackers">

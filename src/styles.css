@@ -450,6 +450,43 @@ select:focus {
   gap: 9px;
 }
 
+.pass-seat-count,
+.pass-target-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.pass-seat-count span {
+  color: #c9c5b9;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.pass-seat-count button,
+.pass-target-row button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+  background: #242822;
+  cursor: pointer;
+}
+
+.pass-seat-count button:disabled,
+.pass-target-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.pass-target-row label {
+  grid-column: 1 / -1;
+  color: #eee7d9;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .pass-seat-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -476,6 +513,12 @@ select:focus {
 .pass-seat-row button {
   background: #242822;
   cursor: pointer;
+}
+
+.pass-seat-row button.is-selected {
+  color: #10110f;
+  background: #f1d66d;
+  font-weight: 900;
 }
 
 .room-fields label {
@@ -1404,13 +1447,27 @@ select:focus {
   max-width: 360px;
 }
 
-.pass-table-actions button {
+.pass-table-actions button,
+.pass-table-actions select {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid rgba(247, 243, 234, 0.14);
   border-radius: 8px;
   background: #242822;
+}
+
+.pass-table-actions button {
   cursor: pointer;
+}
+
+.pass-table-actions select {
+  width: auto;
+  min-width: 118px;
+}
+
+.pass-table-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .pass-table-actions button.is-active {
