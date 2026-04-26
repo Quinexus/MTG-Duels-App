@@ -75,6 +75,7 @@ const zones: Array<{ id: ZoneId; label: string; helper: string }> = [
 ];
 
 const publicZones = new Set<ZoneId>(["battlefield", "graveyard", "exile", "command"]);
+const privateZones = new Set<ZoneId>(["library", "hand", "sideboard"]);
 const battlefieldLanes: Array<{ id: BattlefieldLane; label: string; helper: string }> = [
   { id: "creatures", label: "Creatures", helper: "Attackers, blockers, tokens" },
   { id: "noncreatures", label: "Artifacts / enchantments", helper: "Engines, rocks, walkers" },
@@ -150,6 +151,12 @@ type AutosavedSession = {
 
 type LeftTool = "room" | "deck" | "limited" | "actions";
 type RightTool = "card" | "damage" | "log" | "chat";
+type PlayMode = "solo" | "pass" | "multiplayer";
+type LocalSeat = {
+  id: string;
+  name: string;
+  game: GameState;
+};
 type LimitedMode = "jumpstart" | "sealed" | "draft";
 type LimitedCardSource = "pool" | "deck" | "draft";
 type LimitedSelection = {
@@ -192,7 +199,14 @@ function App() {
   const [playerName, setPlayerName] = useState(autosavedSession?.playerName ?? "Player");
   const [roomCode, setRoomCode] = useState(autosavedSession?.roomCode ?? createRoomCode);
   const [isConnected, setIsConnected] = useState(false);
-  const [mode, setMode] = useState<"solo" | "multiplayer">("solo");
+  const [mode, setMode] = useState<PlayMode>("solo");
+  const [passSeats, setPassSeats] = useState<LocalSeat[]>(() => [
+    { id: "local-player-1", name: "Player 1", game: autosavedSession?.game ?? initialState },
+    { id: "local-player-2", name: "Player 2", game: initialState },
+  ]);
+  const [activePassSeatId, setActivePassSeatId] = useState("local-player-1");
+  const [passDeviceSeatId, setPassDeviceSeatId] = useState<string>();
+  const [isPrivateHidden, setIsPrivateHidden] = useState(false);
   const [peersById, setPeersById] = useState<Record<string, PublicPlayerState>>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -293,7 +307,38 @@ function App() {
     () => Object.values(peersById).sort((a, b) => a.playerName.localeCompare(b.playerName)),
     [peersById],
   );
+  const activePassSeat =
+    passSeats.find((seat) => seat.id === activePassSeatId) ?? passSeats[0] ?? {
+      id: "local-player-1",
+      name: "Player 1",
+      game: initialState,
+    };
+  const passDeviceSeat = passDeviceSeatId
+    ? passSeats.find((seat) => seat.id === passDeviceSeatId)
+    : undefined;
+  const passOpponentStates = useMemo(
+    () =>
+      passSeats
+        .filter((seat) => seat.id !== activePassSeatId)
+        .map((seat) => buildPublicState(seat.game, seat.id, seat.name, "LOCAL")),
+    [activePassSeatId, passSeats],
+  );
+  const visibleOpponents = mode === "pass" ? passOpponentStates : peers;
+  const remotePlayersById = useMemo(
+    () =>
+      Object.fromEntries(
+        [...peers, ...passOpponentStates].map((player) => [player.playerId, player]),
+      ),
+    [passOpponentStates, peers],
+  );
   const commanderDamageSources = useMemo(() => {
+    if (mode === "pass") {
+      return passSeats.map((seat) => ({
+        key: `player-${seat.id}`,
+        label: `${seat.name}'s commander`,
+      }));
+    }
+
     if (mode !== "multiplayer") {
       return [
         { key: "solo-opponent", label: "Opponent commander" },
@@ -308,8 +353,13 @@ function App() {
         label: `${peer.playerName}'s commander`,
       })),
     ];
-  }, [mode, peers, playerId, playerName]);
-  const connectedRoomLabel = isConnected ? `Room ${roomCode.toUpperCase()}` : "Solo sandbox";
+  }, [mode, passSeats, peers, playerId, playerName]);
+  const connectedRoomLabel =
+    mode === "pass"
+      ? `${activePassSeat.name}'s seat`
+      : isConnected
+        ? `Room ${roomCode.toUpperCase()}`
+        : "Goldfish sandbox";
   const relayEnabled = Boolean(relayUrl.trim());
   const hasConfiguredRelay = Boolean(configuredRelayUrl);
   const canEditRelayUrl = !hasConfiguredRelay && isRelaySettingsOpen;
@@ -340,11 +390,11 @@ function App() {
   const selected = game.instances.find((card) => card.instanceId === game.selectedId);
   const selectedData = selected ? game.cardsById[selected.cardId] : undefined;
   const selectedRemoteCard = selectedRemote
-    ? peersById[selectedRemote.playerId]?.publicCards.find(
+    ? remotePlayersById[selectedRemote.playerId]?.publicCards.find(
         (card) => card.instanceId === selectedRemote.cardId,
       )
     : undefined;
-  const selectedRemotePlayer = selectedRemote ? peersById[selectedRemote.playerId] : undefined;
+  const selectedRemotePlayer = selectedRemote ? remotePlayersById[selectedRemote.playerId] : undefined;
   const selectedRemoteData =
     selectedRemoteCard && selectedRemotePlayer
       ? selectedRemotePlayer.cardsById[selectedRemoteCard.cardId]
@@ -441,6 +491,29 @@ function App() {
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
+
+  useEffect(() => {
+    if (mode !== "pass") {
+      return;
+    }
+
+    setPassSeats((current) =>
+      current.map((seat) => (seat.id === activePassSeatId ? { ...seat, game } : seat)),
+    );
+  }, [activePassSeatId, game, mode]);
+
+  useEffect(() => {
+    if (!isPrivateHidden) {
+      return;
+    }
+
+    setHoverPreview(undefined);
+    setSelectedRemote(undefined);
+    setLimitedSelection(undefined);
+    setGame((current) =>
+      current.selectedId ? { ...current, selectedId: undefined } : current,
+    );
+  }, [isPrivateHidden]);
 
   useEffect(() => {
     autosaveTimeoutRef.current = window.setTimeout(() => {
@@ -1909,12 +1982,31 @@ function App() {
     setMode("solo");
     setIsConnected(false);
     setPeersById({});
+    setPassDeviceSeatId(undefined);
+    setIsPrivateHidden(false);
+    setStatus("Goldfish mode stays local and private.");
+  }
+
+  function startPassPlay() {
+    setIsConnected(false);
+    setPeersById({});
+    setPassDeviceSeatId(undefined);
+    setIsPrivateHidden(false);
+    setPassSeats((current) =>
+      current.map((seat) =>
+        seat.id === activePassSeatId ? { ...seat, game: gameRef.current } : seat,
+      ),
+    );
+    setMode("pass");
+    setStatus("Pass-and-play ready. Each seat keeps its own hand and library.");
   }
 
   function joinLobby() {
     setRoomCode(roomCode.trim().toUpperCase() || createRoomCode());
     saveRelayUrl(relayUrl);
     setMode("multiplayer");
+    setPassDeviceSeatId(undefined);
+    setIsPrivateHidden(false);
     setIsConnected(true);
     setStatus(
       relayUrl.trim()
@@ -1927,7 +2019,54 @@ function App() {
     setIsConnected(false);
     setPeersById({});
     setMode("solo");
-    setStatus("Back in solo sandbox mode.");
+    setStatus("Back in goldfish mode.");
+  }
+
+  function updatePassSeatName(seatId: string, name: string) {
+    setPassSeats((current) =>
+      current.map((seat) => (seat.id === seatId ? { ...seat, name } : seat)),
+    );
+  }
+
+  function beginPassDevice(seatId: string) {
+    setPassSeats((current) =>
+      current.map((seat) =>
+        seat.id === activePassSeatId ? { ...seat, game: gameRef.current } : seat,
+      ),
+    );
+    setPassDeviceSeatId(seatId);
+    setIsPrivateHidden(true);
+    setHoverPreview(undefined);
+  }
+
+  function confirmPassDevice() {
+    if (!passDeviceSeat) {
+      return;
+    }
+
+    setActivePassSeatId(passDeviceSeat.id);
+    setGame(passDeviceSeat.game);
+    setLibraryView("hidden");
+    setScryCount(0);
+    setSelectedRemote(undefined);
+    setLimitedSelection(undefined);
+    setPassDeviceSeatId(undefined);
+    setIsPrivateHidden(false);
+    setStatus(`${passDeviceSeat.name} is now active.`);
+  }
+
+  function cancelPassDevice() {
+    setPassDeviceSeatId(undefined);
+    setIsPrivateHidden(false);
+  }
+
+  function loadPassSeat(seatId: string) {
+    const seat = passSeats.find((item) => item.id === seatId);
+    if (!seat || seat.id === activePassSeatId) {
+      return;
+    }
+
+    beginPassDevice(seat.id);
   }
 
   function forgetAutosavedBoard() {
@@ -2092,7 +2231,10 @@ function App() {
                 <p className="eyebrow">Play mode</p>
                 <div className="mode-switch">
                   <button className={mode === "solo" ? "is-active" : ""} onClick={startSolo}>
-                    Solo
+                    Goldfish
+                  </button>
+                  <button className={mode === "pass" ? "is-active" : ""} onClick={startPassPlay}>
+                    Pass-and-play
                   </button>
                   <button
                     className={mode === "multiplayer" ? "is-active" : ""}
@@ -2154,8 +2296,47 @@ function App() {
                         : `${transportLabel}. Add a WebSocket relay URL to play across devices.`}
                     </p>
                   </div>
+                ) : mode === "pass" ? (
+                  <div className="pass-play-panel">
+                    <p className="status-line">
+                      Active seat: <strong>{activePassSeat.name}</strong>. Private zones stay local to that seat.
+                    </p>
+                    <div className="pass-seat-list">
+                      {passSeats.map((seat) => (
+                        <div
+                          className={`pass-seat-row ${seat.id === activePassSeatId ? "is-active" : ""}`}
+                          key={seat.id}
+                        >
+                          <input
+                            value={seat.name}
+                            onChange={(event) => updatePassSeatName(seat.id, event.target.value)}
+                            aria-label={`${seat.name} name`}
+                          />
+                          {seat.id === activePassSeatId ? (
+                            <span>Active</span>
+                          ) : (
+                            <button type="button" onClick={() => loadPassSeat(seat.id)}>
+                              Pass device
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="room-actions">
+                      <button
+                        type="button"
+                        className={isPrivateHidden ? "is-active" : ""}
+                        onClick={() => setIsPrivateHidden((current) => !current)}
+                      >
+                        {isPrivateHidden ? "Show private info" : "Hide private info"}
+                      </button>
+                    </div>
+                    <p className="status-line">
+                      Hide private info lets the active player share the board during their turn. Pass device fully covers the table before another seat takes over.
+                    </p>
+                  </div>
                 ) : (
-                  <p className="status-line">Solo mode stays local and private.</p>
+                  <p className="status-line">Goldfish mode stays local and private.</p>
                 )}
                 {autosavedSession && (
                   <div className="autosave-row">
@@ -2599,8 +2780,32 @@ function App() {
         <header className="table-header">
           <div>
             <p className="eyebrow">{connectedRoomLabel}</p>
-            <h2>{mode === "multiplayer" ? "Lobby table" : "Goldfish mode"}</h2>
+            <h2>
+              {mode === "multiplayer"
+                ? "Lobby table"
+                : mode === "pass"
+                  ? "Pass-and-play"
+                  : "Goldfish mode"}
+            </h2>
           </div>
+          {mode === "pass" && (
+            <div className="pass-table-actions">
+              <button
+                type="button"
+                className={isPrivateHidden ? "is-active" : ""}
+                onClick={() => setIsPrivateHidden((current) => !current)}
+              >
+                {isPrivateHidden ? "Show private info" : "Hide private info"}
+              </button>
+              {passSeats
+                .filter((seat) => seat.id !== activePassSeatId)
+                .map((seat) => (
+                  <button type="button" key={seat.id} onClick={() => beginPassDevice(seat.id)}>
+                    Pass to {seat.name}
+                  </button>
+                ))}
+            </div>
+          )}
           <div className="trackers">
             <Tracker
               label="Life"
@@ -2667,10 +2872,10 @@ function App() {
           </button>
         </section>
 
-        {mode === "multiplayer" && (
+        {(mode === "multiplayer" || mode === "pass") && (
           <section className="opponents-panel" aria-label="Other players">
-            {peers.length ? (
-              peers.map((peer) => (
+            {visibleOpponents.length ? (
+              visibleOpponents.map((peer) => (
                 <OpponentBoard
                   key={peer.playerId}
                   peer={peer}
@@ -2692,8 +2897,9 @@ function App() {
               ))
             ) : (
               <p className="empty-note">
-                No one else is in this room yet. Join {roomCode.toUpperCase()} from
-                another {relayEnabled ? "device using the same relay" : "tab in this browser"}.
+                {mode === "pass"
+                  ? "No other local seats are configured."
+                  : `No one else is in this room yet. Join ${roomCode.toUpperCase()} from another ${relayEnabled ? "device using the same relay" : "tab in this browser"}.`}
               </p>
             )}
           </section>
@@ -2858,6 +3064,7 @@ function App() {
                   selectedId={selected?.instanceId}
                   libraryView={libraryView}
                   scryCount={scryCount}
+                  hidePrivate={isPrivateHidden}
                   cardScale={cardScale}
                   onHoverCard={(card, event) => showCardPreview(card, game.cardsById[card.cardId], event)}
                   onLeaveCard={() => setHoverPreview(undefined)}
@@ -3187,6 +3394,23 @@ function App() {
         </section>
         </div>
       </aside>}
+      {passDeviceSeat && (
+        <div className="pass-device-screen" role="dialog" aria-modal="true">
+          <div>
+            <p className="eyebrow">Pass device</p>
+            <h2>{passDeviceSeat.name}</h2>
+            <p>Private information is covered. Hand the device over, then continue when this seat is ready.</p>
+            <div>
+              <button type="button" onClick={confirmPassDevice}>
+                Start {passDeviceSeat.name}'s turn
+              </button>
+              <button type="button" onClick={cancelPassDevice}>
+                Back to {activePassSeat.name}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {hoverPreview && (
         <div
           className="hover-preview"
@@ -3703,6 +3927,7 @@ function ZoneStack({
   selectedId,
   libraryView,
   scryCount,
+  hidePrivate,
   cardScale,
   onHoverCard,
   onLeaveCard,
@@ -3716,6 +3941,7 @@ function ZoneStack({
   selectedId?: string;
   libraryView: "hidden" | "scry" | "search";
   scryCount: number;
+  hidePrivate: boolean;
   cardScale: number;
   onHoverCard: (card: CardInstance, event: MouseEvent<HTMLElement>) => void;
   onLeaveCard: () => void;
@@ -3723,6 +3949,15 @@ function ZoneStack({
   onDropBeforeCard: (event: DragEvent<HTMLButtonElement>, targetId: string) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
 }) {
+  if (hidePrivate && privateZones.has(zoneId)) {
+    return (
+      <div className="private-zone-hidden">
+        <div className="card-back">MTG</div>
+        <p>{cards.length} card{cards.length === 1 ? "" : "s"} hidden</p>
+      </div>
+    );
+  }
+
   if (zoneId === "library" && libraryView === "hidden") {
     return (
       <div className="library-closed">

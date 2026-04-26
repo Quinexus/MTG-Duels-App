@@ -403,6 +403,10 @@ select:focus {
   gap: 8px;
 }
 
+.room-panel .mode-switch {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .limited-panel .mode-switch {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -438,6 +442,40 @@ select:focus {
 .room-fields {
   display: grid;
   gap: 9px;
+}
+
+.pass-play-panel,
+.pass-seat-list {
+  display: grid;
+  gap: 9px;
+}
+
+.pass-seat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.pass-seat-row span,
+.pass-seat-row button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+}
+
+.pass-seat-row span {
+  display: grid;
+  place-items: center;
+  color: #10110f;
+  background: #7ce3b1;
+  font-weight: 900;
+}
+
+.pass-seat-row button {
+  background: #242822;
+  cursor: pointer;
 }
 
 .room-fields label {
@@ -1358,6 +1396,29 @@ select:focus {
   margin-bottom: 14px;
 }
 
+.pass-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.pass-table-actions button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+  background: #242822;
+  cursor: pointer;
+}
+
+.pass-table-actions button.is-active {
+  color: #10110f;
+  background: #f1d66d;
+  font-weight: 900;
+}
+
 .layout-controls {
   display: grid;
   grid-template-columns: auto minmax(120px, 1fr) 52px auto minmax(120px, 1fr) 52px auto auto;
@@ -1795,7 +1856,8 @@ select:focus {
   padding: 1px;
 }
 
-.library-closed {
+.library-closed,
+.private-zone-hidden {
   display: grid;
   place-items: center;
   gap: 12px;
@@ -1805,7 +1867,8 @@ select:focus {
   text-align: center;
 }
 
-.library-closed .card-back {
+.library-closed .card-back,
+.private-zone-hidden .card-back {
   width: 64px;
   height: auto;
   aspect-ratio: 0.714;
@@ -1813,10 +1876,17 @@ select:focus {
   border-radius: 8px;
 }
 
-.library-closed p {
+.library-closed p,
+.private-zone-hidden p {
   max-width: 210px;
   margin: 0;
   line-height: 1.4;
+}
+
+.private-zone-hidden {
+  border: 1px dashed rgba(241, 214, 109, 0.35);
+  border-radius: 8px;
+  background: rgba(16, 17, 15, 0.38);
 }
 
 .battlefield-lanes {
@@ -2069,6 +2139,59 @@ select:focus {
   border-radius: 8px;
   background: #242822;
   cursor: pointer;
+}
+
+.pass-device-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(rgba(10, 12, 10, 0.92), rgba(10, 12, 10, 0.94)),
+    #10110f;
+}
+
+.pass-device-screen > div {
+  display: grid;
+  gap: 14px;
+  width: min(440px, 100%);
+  padding: 24px;
+  background: #181a17;
+  border: 1px solid rgba(247, 243, 234, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45);
+}
+
+.pass-device-screen h2 {
+  font-size: 30px;
+}
+
+.pass-device-screen p {
+  color: #c9c5b9;
+  line-height: 1.5;
+}
+
+.pass-device-screen > div > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.pass-device-screen button {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(247, 243, 234, 0.14);
+  border-radius: 8px;
+  background: #242822;
+  cursor: pointer;
+}
+
+.pass-device-screen button:first-child {
+  color: #10110f;
+  background: #7ce3b1;
+  font-weight: 900;
 }
 
 .hover-preview {
@@ -2430,6 +2553,15 @@ select:focus {
     display: grid;
     gap: 8px;
     margin-bottom: 8px;
+  }
+
+  .pass-table-actions {
+    justify-content: stretch;
+    max-width: none;
+  }
+
+  .pass-table-actions button {
+    flex: 1 1 120px;
   }
 
   .table-header h2 {
