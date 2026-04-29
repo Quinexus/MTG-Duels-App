@@ -8,6 +8,7 @@ import {
   type DragEvent,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
   type TouchEvent,
 } from "react";
 import {
@@ -74,9 +75,18 @@ const zones: Array<{ id: ZoneId; label: string; helper: string }> = [
   { id: "tokenBank", label: "Tokens", helper: "Reusable token bank" },
 ];
 
+const podLocalZoneOrder: ZoneId[] = [
+  "hand",
+  "library",
+  "command",
+  "graveyard",
+  "exile",
+  "tokenBank",
+  "sideboard",
+];
 const publicZones = new Set<ZoneId>(["battlefield", "graveyard", "exile", "command"]);
 const privateZones = new Set<ZoneId>(["library", "hand", "sideboard"]);
-const maxPassSeats = 4;
+const maxPassSeats = 6;
 const battlefieldLanes: Array<{ id: BattlefieldLane; label: string; helper: string }> = [
   { id: "creatures", label: "Creatures", helper: "Attackers, blockers, tokens" },
   { id: "noncreatures", label: "Artifacts / enchantments", helper: "Engines, rocks, walkers" },
@@ -153,7 +163,7 @@ type AutosavedSession = {
 type LeftTool = "room" | "deck" | "limited" | "actions";
 type RightTool = "card" | "damage" | "log" | "chat";
 type PlayMode = "solo" | "pass" | "multiplayer";
-type TabletopSide = "top" | "bottom" | "left" | "right";
+type TabletopSide = "top" | "near" | "left" | "right";
 type TabletopSeatGroups = Record<TabletopSide, PublicPlayerState[]>;
 type LocalSeat = {
   id: string;
@@ -1340,7 +1350,7 @@ function App() {
   }
 
   function moveSelectedByTouch(zone: ZoneId, lane?: BattlefieldLane) {
-    if (!isCompactViewport() || !selected || selectedRemote) {
+    if ((!isCompactViewport() && !isTabletopMode) || !selected || selectedRemote) {
       return;
     }
 
@@ -1354,12 +1364,12 @@ function App() {
   }
 
   function moveSelectedToFreePoint(event: MouseEvent<HTMLElement>) {
-    if (!isCompactViewport() || !selected || selectedRemote) {
+    if ((!isCompactViewport() && !isTabletopMode) || !selected || selectedRemote) {
       return;
     }
 
     const board = event.currentTarget.getBoundingClientRect();
-    const cardWidth = 70 * cardScale;
+    const cardWidth = (isCompactViewport() ? 70 : 82) * cardScale;
     const cardHeight = cardWidth / 0.714;
     const x = ((event.clientX - board.left - cardWidth / 2) / board.width) * 100;
     const y = ((event.clientY - board.top - cardHeight / 2) / board.height) * 100;
@@ -1415,7 +1425,7 @@ function App() {
 
   function selectOrReorderCard(card: CardInstance, zone: ZoneId, lane?: BattlefieldLane) {
     if (
-      isCompactViewport() &&
+      (isCompactViewport() || isTabletopMode) &&
       selected &&
       !selectedRemote &&
       selected.instanceId !== card.instanceId
@@ -1435,7 +1445,7 @@ function App() {
   }
 
   function clearTouchSelection() {
-    if (!isCompactViewport()) {
+    if (!isCompactViewport() && !isTabletopMode) {
       return;
     }
 
@@ -2254,6 +2264,12 @@ function App() {
     }
   }
 
+  function toggleLibrarySearch() {
+    setLibraryView((current) => (current === "search" ? "hidden" : "search"));
+    setScryCount(0);
+    setGame((current) => ({ ...current, activeZone: "library" }));
+  }
+
   function selectTabletopCard(tablePlayerId: string, cardId: string) {
     setLimitedSelection(undefined);
 
@@ -2855,13 +2871,7 @@ function App() {
                 <button onClick={() => scry(1)}>Scry 1</button>
                 <button onClick={() => scry(2)}>Scry 2</button>
                 {libraryView !== "hidden" && <button onClick={closeLibraryReveal}>Done looking</button>}
-                <button
-                  onClick={() => {
-                    setLibraryView((current) => (current === "search" ? "hidden" : "search"));
-                    setScryCount(0);
-                    setGame((current) => ({ ...current, activeZone: "library" }));
-                  }}
-                >
+                <button onClick={toggleLibrarySearch}>
                   {libraryView === "search" ? "Hide library" : "Search library"}
                 </button>
                 <button onClick={shuffleLibrary}>Shuffle</button>
@@ -3104,8 +3114,44 @@ function App() {
             players={tabletopPlayers}
             localPlayerId={localTablePlayer.playerId}
             roomLabel={mode === "pass" ? "Pass-and-play" : roomCode.toUpperCase()}
+            localBoard={
+              <LocalTabletopPlayerBoard
+                playerName={localTablePlayer.playerName}
+                game={game}
+                zones={visibleZones}
+                selectedCard={selected}
+                selectedData={selectedData}
+                libraryView={libraryView}
+                scryCount={scryCount}
+                hidePrivate={isPrivateHidden}
+                cardScale={Math.min(cardScale, 1)}
+                onDraw={() => draw(1)}
+                onUntapAll={untapAllBattlefield}
+                onShuffle={shuffleLibrary}
+                onToggleLibrarySearch={toggleLibrarySearch}
+                onCloseLibraryReveal={closeLibraryReveal}
+                onMoveSelected={moveSelected}
+                onToggleSelectedTapped={() => selected && toggleTapped(selected.instanceId)}
+                onSetActiveZone={(zone) => setGame((current) => ({ ...current, activeZone: zone }))}
+                onHoverCard={(card, event) => showCardPreview(card, game.cardsById[card.cardId], event)}
+                onLeaveCard={() => setHoverPreview(undefined)}
+                onDrop={onDrop}
+                onDropBeforeCard={onDropBeforeCard}
+                onFreeMove={moveFreeBattlefieldCard}
+                onFinishFreeMove={clearTouchSelection}
+                onDoubleClickCard={toggleTapped}
+                onTapZone={moveSelectedByTouch}
+                onTapFreeBoard={moveSelectedToFreePoint}
+                onSelectCard={selectOrReorderCard}
+                onDragStart={(event, card) => {
+                  setDraggedId(card.instanceId);
+                  event.dataTransfer.effectAllowed =
+                    card.zone === "tokenBank" ? "copy" : "move";
+                  event.dataTransfer.setData("text/plain", card.instanceId);
+                }}
+              />
+            }
             selectedRemote={selectedRemote}
-            selectedLocalId={selected?.instanceId}
             onSelectCard={selectTabletopCard}
             onHoverCard={showTabletopCardPreview}
             onLeaveCard={() => setHoverPreview(undefined)}
@@ -4606,12 +4652,273 @@ function OpponentBoard({
   );
 }
 
+function LocalTabletopPlayerBoard({
+  playerName,
+  game,
+  zones,
+  selectedCard,
+  selectedData,
+  libraryView,
+  scryCount,
+  hidePrivate,
+  cardScale,
+  onDraw,
+  onUntapAll,
+  onShuffle,
+  onToggleLibrarySearch,
+  onCloseLibraryReveal,
+  onMoveSelected,
+  onToggleSelectedTapped,
+  onSetActiveZone,
+  onHoverCard,
+  onLeaveCard,
+  onDrop,
+  onDropBeforeCard,
+  onFreeMove,
+  onFinishFreeMove,
+  onDoubleClickCard,
+  onTapZone,
+  onTapFreeBoard,
+  onSelectCard,
+  onDragStart,
+}: {
+  playerName: string;
+  game: GameState;
+  zones: Array<{ id: ZoneId; label: string; helper: string; cards: CardInstance[] }>;
+  selectedCard?: CardInstance;
+  selectedData?: CardData;
+  libraryView: "hidden" | "scry" | "search";
+  scryCount: number;
+  hidePrivate: boolean;
+  cardScale: number;
+  onDraw: () => void;
+  onUntapAll: () => void;
+  onShuffle: () => void;
+  onToggleLibrarySearch: () => void;
+  onCloseLibraryReveal: () => void;
+  onMoveSelected: (zone: ZoneId, lane?: BattlefieldLane) => void;
+  onToggleSelectedTapped: () => void;
+  onSetActiveZone: (zone: ZoneId) => void;
+  onHoverCard: (card: CardInstance, event: MouseEvent<HTMLElement>) => void;
+  onLeaveCard: () => void;
+  onDrop: (event: DragEvent<HTMLElement>, zone: ZoneId, lane?: BattlefieldLane) => void;
+  onDropBeforeCard: (
+    event: DragEvent<HTMLElement>,
+    zone: ZoneId,
+    targetId: string,
+    lane?: BattlefieldLane,
+  ) => void;
+  onFreeMove: (cardId: string, x: number, y: number) => void;
+  onFinishFreeMove: () => void;
+  onDoubleClickCard: (cardId: string) => void;
+  onTapZone: (zone: ZoneId, lane?: BattlefieldLane) => void;
+  onTapFreeBoard: (event: MouseEvent<HTMLElement>) => void;
+  onSelectCard: (card: CardInstance, zone: ZoneId, lane?: BattlefieldLane) => void;
+  onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
+}) {
+  const battlefield = zones.find((zone) => zone.id === "battlefield");
+  const localZones = podLocalZoneOrder
+    .map((zoneId) => zones.find((zone) => zone.id === zoneId))
+    .filter((zone): zone is { id: ZoneId; label: string; helper: string; cards: CardInstance[] } =>
+      Boolean(zone),
+    );
+
+  return (
+    <article className="pod-local-player-board">
+      <header>
+        <div>
+          <p className="eyebrow">Current player</p>
+          <strong>{playerName}</strong>
+          <span>
+            Life {game.life} · Poison {game.poison} · Energy {game.energy} · Turn {game.turn}
+          </span>
+        </div>
+        <div className="pod-local-actions" aria-label="Current player actions">
+          <button type="button" onClick={onDraw}>Draw</button>
+          <button type="button" onClick={onUntapAll}>Untap</button>
+          <button type="button" onClick={onToggleLibrarySearch}>
+            {libraryView === "search" ? "Hide library" : "Search"}
+          </button>
+          <button type="button" onClick={onShuffle}>Shuffle</button>
+          {libraryView !== "hidden" && (
+            <button type="button" onClick={onCloseLibraryReveal}>Done</button>
+          )}
+        </div>
+      </header>
+
+      <div className="pod-local-layout">
+        <section className="pod-local-battlefield" aria-label="Current player's battlefield">
+          <div className="pod-local-section-heading">
+            <span>
+              <strong>Battlefield</strong>
+              <small>{game.battlefieldLayout === "free" ? "Free move" : "Snap lanes"}</small>
+            </span>
+            <b>{battlefield?.cards.length ?? 0}</b>
+          </div>
+          {battlefield && (
+            <BattlefieldZone
+              cards={battlefield.cards}
+              cardsById={game.cardsById}
+              selectedId={selectedCard?.instanceId}
+              layout={game.battlefieldLayout}
+              cardScale={cardScale}
+              onHoverCard={onHoverCard}
+              onLeaveCard={onLeaveCard}
+              onDrop={onDrop}
+              onDropBeforeCard={onDropBeforeCard}
+              onFreeMove={onFreeMove}
+              onFinishFreeMove={onFinishFreeMove}
+              onDoubleClickCard={onDoubleClickCard}
+              onTapZone={(lane) => onTapZone("battlefield", lane)}
+              onTapFreeBoard={onTapFreeBoard}
+              onSelect={(card, lane) => onSelectCard(card, "battlefield", lane)}
+              onDragStart={onDragStart}
+            />
+          )}
+        </section>
+
+        <div className="pod-local-zones">
+          {localZones.map((zone) => (
+            <LocalTabletopZone
+              key={zone.id}
+              zone={zone}
+              cardsById={game.cardsById}
+              selectedId={selectedCard?.instanceId}
+              active={game.activeZone === zone.id}
+              libraryView={libraryView}
+              scryCount={scryCount}
+              hidePrivate={hidePrivate}
+              cardScale={cardScale}
+              onSetActiveZone={onSetActiveZone}
+              onMoveSelected={onTapZone}
+              onHoverCard={onHoverCard}
+              onLeaveCard={onLeaveCard}
+              onDrop={onDrop}
+              onDropBeforeCard={onDropBeforeCard}
+              onSelectCard={onSelectCard}
+              onDragStart={onDragStart}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="pod-selected-actions" aria-label="Selected local card actions">
+        <div>
+          <span>Selected</span>
+          <strong>{selectedData?.name ?? "None"}</strong>
+        </div>
+        <button
+          type="button"
+          onClick={onToggleSelectedTapped}
+          disabled={!selectedCard || selectedCard.zone !== "battlefield"}
+        >
+          {selectedCard?.tapped ? "Untap" : "Tap"}
+        </button>
+        <button type="button" onClick={() => onMoveSelected("battlefield", "creatures")} disabled={!selectedCard}>
+          Creatures
+        </button>
+        <button type="button" onClick={() => onMoveSelected("battlefield", "noncreatures")} disabled={!selectedCard}>
+          Engines
+        </button>
+        <button type="button" onClick={() => onMoveSelected("battlefield", "lands")} disabled={!selectedCard}>
+          Lands
+        </button>
+        <button type="button" onClick={() => onMoveSelected("hand")} disabled={!selectedCard}>
+          Hand
+        </button>
+        <button type="button" onClick={() => onMoveSelected("graveyard")} disabled={!selectedCard}>
+          Graveyard
+        </button>
+        <button type="button" onClick={() => onMoveSelected("exile")} disabled={!selectedCard}>
+          Exile
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function LocalTabletopZone({
+  zone,
+  cardsById,
+  selectedId,
+  active,
+  libraryView,
+  scryCount,
+  hidePrivate,
+  cardScale,
+  onSetActiveZone,
+  onMoveSelected,
+  onHoverCard,
+  onLeaveCard,
+  onDrop,
+  onDropBeforeCard,
+  onSelectCard,
+  onDragStart,
+}: {
+  zone: { id: ZoneId; label: string; helper: string; cards: CardInstance[] };
+  cardsById: Record<string, CardData>;
+  selectedId?: string;
+  active: boolean;
+  libraryView: "hidden" | "scry" | "search";
+  scryCount: number;
+  hidePrivate: boolean;
+  cardScale: number;
+  onSetActiveZone: (zone: ZoneId) => void;
+  onMoveSelected: (zone: ZoneId) => void;
+  onHoverCard: (card: CardInstance, event: MouseEvent<HTMLElement>) => void;
+  onLeaveCard: () => void;
+  onDrop: (event: DragEvent<HTMLElement>, zone: ZoneId, lane?: BattlefieldLane) => void;
+  onDropBeforeCard: (
+    event: DragEvent<HTMLElement>,
+    zone: ZoneId,
+    targetId: string,
+    lane?: BattlefieldLane,
+  ) => void;
+  onSelectCard: (card: CardInstance, zone: ZoneId) => void;
+  onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
+}) {
+  return (
+    <section
+      className={`pod-local-zone zone-${zone.id} ${active ? "is-active" : ""}`}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => onDrop(event, zone.id)}
+      onClick={() => {
+        onSetActiveZone(zone.id);
+        onMoveSelected(zone.id);
+      }}
+    >
+      <div className="pod-local-zone-heading">
+        <span>
+          <strong>{zone.label}</strong>
+          <small>{zone.helper}</small>
+        </span>
+        <b>{zone.cards.length}</b>
+      </div>
+      <ZoneStack
+        zoneId={zone.id}
+        cards={zone.cards}
+        cardsById={cardsById}
+        selectedId={selectedId}
+        libraryView={libraryView}
+        scryCount={scryCount}
+        hidePrivate={hidePrivate}
+        cardScale={cardScale}
+        onHoverCard={onHoverCard}
+        onLeaveCard={onLeaveCard}
+        onSelect={(card) => onSelectCard(card, zone.id)}
+        onDropBeforeCard={(event, targetId) => onDropBeforeCard(event, zone.id, targetId)}
+        onDragStart={onDragStart}
+      />
+    </section>
+  );
+}
+
 function TabletopPodView({
   players,
   localPlayerId,
   roomLabel,
+  localBoard,
   selectedRemote,
-  selectedLocalId,
   onSelectCard,
   onHoverCard,
   onLeaveCard,
@@ -4619,11 +4926,11 @@ function TabletopPodView({
   players: PublicPlayerState[];
   localPlayerId: string;
   roomLabel: string;
+  localBoard: ReactNode;
   selectedRemote?: {
     playerId: string;
     cardId: string;
   };
-  selectedLocalId?: string;
   onSelectCard: (playerId: string, cardId: string) => void;
   onHoverCard: (
     player: PublicPlayerState,
@@ -4632,26 +4939,25 @@ function TabletopPodView({
   ) => void;
   onLeaveCard: () => void;
 }) {
-  const seats = arrangeTabletopSeats(players);
+  const opponents = players.filter((player) => player.playerId !== localPlayerId);
+  const seats = arrangeTabletopSeats(opponents);
   const seatedPlayerIds = new Set(
     Object.values(seats)
       .flat()
       .map((player) => player.playerId),
   );
-  const extraPlayers = players.filter((player) => !seatedPlayerIds.has(player.playerId));
+  const extraPlayers = opponents.filter((player) => !seatedPlayerIds.has(player.playerId));
 
   function renderSeat(player: PublicPlayerState, side: TabletopSide) {
     return (
       <div className={`pod-seat pod-seat-${side}`} key={player.playerId}>
         <TabletopPlayerBoard
           player={player}
-          isLocal={player.playerId === localPlayerId}
+          isLocal={false}
           selectedCardId={
-            player.playerId === localPlayerId
-              ? selectedLocalId
-              : selectedRemote?.playerId === player.playerId
-                ? selectedRemote.cardId
-                : undefined
+            selectedRemote?.playerId === player.playerId
+              ? selectedRemote.cardId
+              : undefined
           }
           onSelectCard={(cardId) => onSelectCard(player.playerId, cardId)}
           onHoverCard={(card, event) => onHoverCard(player, card, event)}
@@ -4689,12 +4995,16 @@ function TabletopPodView({
         </div>
       </div>
 
-      <div
-        className="pod-table-row pod-table-bottom"
-        style={{ "--seat-count": Math.max(1, seats.bottom.length) } as CSSProperties}
-      >
-        {seats.bottom.map((player) => renderSeat(player, "bottom"))}
-      </div>
+      {seats.near.length > 0 && (
+        <div
+          className="pod-table-row pod-table-near"
+          style={{ "--seat-count": Math.max(1, seats.near.length) } as CSSProperties}
+        >
+          {seats.near.map((player) => renderSeat(player, "near"))}
+        </div>
+      )}
+
+      <div className="pod-local-seat">{localBoard}</div>
 
       {extraPlayers.length > 0 && (
         <div className="pod-extra-players">
@@ -5474,10 +5784,10 @@ function normalizeTokenName(name: string) {
 }
 
 function arrangeTabletopSeats(players: PublicPlayerState[]): TabletopSeatGroups {
-  const visiblePlayers = players.slice(0, 6);
+  const visiblePlayers = players.slice(0, 5);
   const groups: TabletopSeatGroups = {
     top: [],
-    bottom: [],
+    near: [],
     left: [],
     right: [],
   };
@@ -5487,31 +5797,27 @@ function arrangeTabletopSeats(players: PublicPlayerState[]): TabletopSeatGroups 
   }
 
   if (visiblePlayers.length === 1) {
-    groups.bottom = visiblePlayers;
+    groups.top = visiblePlayers;
     return groups;
   }
 
   if (visiblePlayers.length === 2) {
-    groups.top = [visiblePlayers[1]];
-    groups.bottom = [visiblePlayers[0]];
+    groups.top = visiblePlayers;
     return groups;
   }
 
   if (visiblePlayers.length === 3) {
-    groups.top = [visiblePlayers[1]];
-    groups.bottom = [visiblePlayers[0], visiblePlayers[2]];
+    groups.top = visiblePlayers.slice(0, 2);
+    groups.near = [visiblePlayers[2]];
     return groups;
   }
 
-  groups.top = visiblePlayers.slice(1, 3);
-  groups.bottom = [visiblePlayers[0], visiblePlayers[3]];
+  groups.top = visiblePlayers.slice(0, 2);
+  groups.left = [visiblePlayers[2]];
+  groups.right = [visiblePlayers[3]];
 
   if (visiblePlayers[4]) {
-    groups.left = [visiblePlayers[4]];
-  }
-
-  if (visiblePlayers[5]) {
-    groups.right = [visiblePlayers[5]];
+    groups.near = visiblePlayers.slice(4, 6);
   }
 
   return groups;
