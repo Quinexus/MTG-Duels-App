@@ -153,6 +153,8 @@ type AutosavedSession = {
 type LeftTool = "room" | "deck" | "limited" | "actions";
 type RightTool = "card" | "damage" | "log" | "chat";
 type PlayMode = "solo" | "pass" | "multiplayer";
+type TabletopSide = "top" | "bottom" | "left" | "right";
+type TabletopSeatGroups = Record<TabletopSide, PublicPlayerState[]>;
 type LocalSeat = {
   id: string;
   name: string;
@@ -285,6 +287,7 @@ function App() {
   const [rightTool, setRightTool] = useState<RightTool>("card");
   const [cardScale, setCardScale] = useState(1);
   const [freeBattlefieldExpanded, setFreeBattlefieldExpanded] = useState(false);
+  const [isTabletopMode, setIsTabletopMode] = useState(false);
   const [hoverPreview, setHoverPreview] = useState<{
     card: CardData;
     imageUrl?: string;
@@ -336,6 +339,24 @@ function App() {
       ),
     [passOpponentStates, peers],
   );
+  const localTablePlayer = useMemo(
+    () =>
+      mode === "pass"
+        ? buildPublicState(game, activePassSeat.id, activePassSeat.name, "LOCAL")
+        : buildPublicState(game, playerId, playerName, roomCode),
+    [activePassSeat.id, activePassSeat.name, game, mode, playerId, playerName, roomCode],
+  );
+  const tabletopPlayers = useMemo(() => {
+    if (mode === "pass") {
+      return [localTablePlayer, ...passOpponentStates];
+    }
+
+    if (mode === "multiplayer") {
+      return [localTablePlayer, ...peers];
+    }
+
+    return [localTablePlayer];
+  }, [localTablePlayer, mode, passOpponentStates, peers]);
   const commanderDamageSources = useMemo(() => {
     if (mode === "pass") {
       return passSeats.map((seat) => ({
@@ -382,6 +403,10 @@ function App() {
     leftTool === "limited" &&
     (limitedMode === "sealed" || limitedMode === "draft") &&
     (limitedPool.length > 0 || limitedDeck.length > 0 || sealedPacks.length > 0 || draftPacks[0]?.length > 0);
+  const canUseTabletopMode =
+    (mode === "multiplayer" || mode === "pass") && tabletopPlayers.length >= 2;
+  const canShowTabletopView = canUseTabletopMode && !showLimitedWorkspace;
+  const isTabletopView = canShowTabletopView && isTabletopMode;
   const jumpstartProducts = useMemo(
     () => ["All", ...Array.from(new Set(jumpstartThemes.map((theme) => theme.product ?? "Jumpstart")))],
     [],
@@ -496,6 +521,28 @@ function App() {
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
+
+  useEffect(() => {
+    if (!canUseTabletopMode && isTabletopMode) {
+      setIsTabletopMode(false);
+    }
+  }, [canUseTabletopMode, isTabletopMode]);
+
+  useEffect(() => {
+    if (!isTabletopMode || typeof window === "undefined") {
+      return;
+    }
+
+    function leaveCompactTabletop() {
+      if (isCompactViewport()) {
+        setIsTabletopMode(false);
+      }
+    }
+
+    leaveCompactTabletop();
+    window.addEventListener("resize", leaveCompactTabletop);
+    return () => window.removeEventListener("resize", leaveCompactTabletop);
+  }, [isTabletopMode]);
 
   useEffect(() => {
     if (
@@ -2068,6 +2115,25 @@ function App() {
     setStatus("Added a local pass-and-play seat.");
   }
 
+  function removePassSeat(seatId: string) {
+    const seat = passSeats.find((item) => item.id === seatId);
+    if (!seat || seat.id === activePassSeatId || passSeats.length <= 2) {
+      return;
+    }
+
+    const nextSeats = passSeats.filter((item) => item.id !== seatId);
+    setPassSeats(nextSeats);
+    if (selectedPassSeatId === seatId) {
+      setSelectedPassSeatId(
+        nextSeats.find((item) => item.id !== activePassSeatId)?.id ?? "",
+      );
+    }
+    if (passDeviceSeatId === seatId) {
+      setPassDeviceSeatId(undefined);
+    }
+    setStatus(`${seat.name} removed from pass-and-play.`);
+  }
+
   function beginPassDevice(seatId: string) {
     setPassSeats((current) =>
       current.map((seat) =>
@@ -2188,11 +2254,61 @@ function App() {
     }
   }
 
+  function selectTabletopCard(tablePlayerId: string, cardId: string) {
+    setLimitedSelection(undefined);
+
+    if (tablePlayerId === localTablePlayer.playerId) {
+      setSelectedRemote(undefined);
+      setGame((current) => {
+        const card = current.instances.find((item) => item.instanceId === cardId);
+        return card
+          ? { ...current, selectedId: card.instanceId, activeZone: card.zone }
+          : current;
+      });
+      return;
+    }
+
+    setSelectedRemote({ playerId: tablePlayerId, cardId });
+    setGame((current) => ({ ...current, selectedId: undefined }));
+  }
+
+  function showTabletopCardPreview(
+    tablePlayer: PublicPlayerState,
+    card: PublicCard,
+    event: MouseEvent<HTMLElement>,
+  ) {
+    if (tablePlayer.playerId === localTablePlayer.playerId) {
+      const localCard = gameRef.current.instances.find(
+        (item) => item.instanceId === card.instanceId,
+      );
+
+      if (localCard) {
+        showCardPreview(localCard, gameRef.current.cardsById[localCard.cardId], event);
+      }
+      return;
+    }
+
+    showRemoteCardPreview(card, tablePlayer.cardsById[card.cardId], event);
+  }
+
+  function toggleTabletopMode() {
+    setIsTabletopMode((current) => {
+      const next = !current;
+
+      if (next && !isCompactViewport()) {
+        setLeftPanelOpen(false);
+        setRightPanelOpen(false);
+      }
+
+      return next;
+    });
+  }
+
   return (
     <main
       className={`app-shell ${leftPanelOpen ? "" : "is-left-collapsed"} ${
         rightPanelOpen ? "" : "is-right-collapsed"
-      }`}
+      } ${isTabletopView ? "is-tabletop-view" : ""}`}
       style={{ "--zone-scale": layoutScale * 1.35 } as CSSProperties}
       onMouseLeave={() => setHoverPreview(undefined)}
     >
@@ -2366,13 +2482,24 @@ function App() {
                           {seat.id === activePassSeatId ? (
                             <span>Active</span>
                           ) : (
-                            <button
-                              type="button"
-                              className={seat.id === selectedPassSeat?.id ? "is-selected" : ""}
-                              onClick={() => setSelectedPassSeatId(seat.id)}
-                            >
-                              {seat.id === selectedPassSeat?.id ? "Selected" : "Select"}
-                            </button>
+                            <div className="pass-seat-actions">
+                              <button
+                                type="button"
+                                className={seat.id === selectedPassSeat?.id ? "is-selected" : ""}
+                                onClick={() => setSelectedPassSeatId(seat.id)}
+                              >
+                                {seat.id === selectedPassSeat?.id ? "Selected" : "Select"}
+                              </button>
+                              {passSeats.length > 2 && (
+                                <button
+                                  type="button"
+                                  className="danger-action"
+                                  onClick={() => removePassSeat(seat.id)}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       ))}
@@ -2950,11 +3077,41 @@ function App() {
               Free move
             </button>
           </div>
+          {canUseTabletopMode && (
+            <button
+              className={`desktop-tabletop-button ${isTabletopMode ? "is-active" : ""}`}
+              type="button"
+              disabled={showLimitedWorkspace}
+              title={
+                showLimitedWorkspace
+                  ? "Finish or close the limited workspace first"
+                  : isTabletopMode
+                    ? "Return to the full board"
+                    : "Show every player around one table"
+              }
+              onClick={toggleTabletopMode}
+            >
+              {isTabletopMode ? "Board view" : "Pod table"}
+            </button>
+          )}
           <button className="reset-board-button" onClick={resetBoardPositions}>
             Reset game
           </button>
         </section>
 
+        {isTabletopView ? (
+          <TabletopPodView
+            players={tabletopPlayers}
+            localPlayerId={localTablePlayer.playerId}
+            roomLabel={mode === "pass" ? "Pass-and-play" : roomCode.toUpperCase()}
+            selectedRemote={selectedRemote}
+            selectedLocalId={selected?.instanceId}
+            onSelectCard={selectTabletopCard}
+            onHoverCard={showTabletopCardPreview}
+            onLeaveCard={() => setHoverPreview(undefined)}
+          />
+        ) : (
+          <>
         {(mode === "multiplayer" || mode === "pass") && (
           <section className="opponents-panel" aria-label="Other players">
             {visibleOpponents.length ? (
@@ -3166,6 +3323,8 @@ function App() {
             </section>
           ))}
         </div>
+        )}
+          </>
         )}
       </section>
 
@@ -4447,6 +4606,382 @@ function OpponentBoard({
   );
 }
 
+function TabletopPodView({
+  players,
+  localPlayerId,
+  roomLabel,
+  selectedRemote,
+  selectedLocalId,
+  onSelectCard,
+  onHoverCard,
+  onLeaveCard,
+}: {
+  players: PublicPlayerState[];
+  localPlayerId: string;
+  roomLabel: string;
+  selectedRemote?: {
+    playerId: string;
+    cardId: string;
+  };
+  selectedLocalId?: string;
+  onSelectCard: (playerId: string, cardId: string) => void;
+  onHoverCard: (
+    player: PublicPlayerState,
+    card: PublicCard,
+    event: MouseEvent<HTMLElement>,
+  ) => void;
+  onLeaveCard: () => void;
+}) {
+  const seats = arrangeTabletopSeats(players);
+  const seatedPlayerIds = new Set(
+    Object.values(seats)
+      .flat()
+      .map((player) => player.playerId),
+  );
+  const extraPlayers = players.filter((player) => !seatedPlayerIds.has(player.playerId));
+
+  function renderSeat(player: PublicPlayerState, side: TabletopSide) {
+    return (
+      <div className={`pod-seat pod-seat-${side}`} key={player.playerId}>
+        <TabletopPlayerBoard
+          player={player}
+          isLocal={player.playerId === localPlayerId}
+          selectedCardId={
+            player.playerId === localPlayerId
+              ? selectedLocalId
+              : selectedRemote?.playerId === player.playerId
+                ? selectedRemote.cardId
+                : undefined
+          }
+          onSelectCard={(cardId) => onSelectCard(player.playerId, cardId)}
+          onHoverCard={(card, event) => onHoverCard(player, card, event)}
+          onLeaveCard={onLeaveCard}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <section
+      className={`tabletop-pod-view pod-count-${Math.min(players.length, 6)}`}
+      aria-label="Pod tabletop view"
+    >
+      <div
+        className="pod-table-row pod-table-top"
+        style={{ "--seat-count": Math.max(1, seats.top.length) } as CSSProperties}
+      >
+        {seats.top.map((player) => renderSeat(player, "top"))}
+      </div>
+
+      <div className="pod-table-middle">
+        <div className="pod-table-end pod-table-left">
+          {seats.left.map((player) => renderSeat(player, "left"))}
+        </div>
+        <div className="pod-table-center" aria-label="Table summary">
+          <div>
+            <span>{roomLabel}</span>
+            <strong>{players.length}</strong>
+            <small>{players.length === 1 ? "player" : "players"}</small>
+          </div>
+        </div>
+        <div className="pod-table-end pod-table-right">
+          {seats.right.map((player) => renderSeat(player, "right"))}
+        </div>
+      </div>
+
+      <div
+        className="pod-table-row pod-table-bottom"
+        style={{ "--seat-count": Math.max(1, seats.bottom.length) } as CSSProperties}
+      >
+        {seats.bottom.map((player) => renderSeat(player, "bottom"))}
+      </div>
+
+      {extraPlayers.length > 0 && (
+        <div className="pod-extra-players">
+          {extraPlayers.map((player) => (
+            <span key={player.playerId}>
+              {player.playerName} <b>{player.life}</b>
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TabletopPlayerBoard({
+  player,
+  isLocal,
+  selectedCardId,
+  onSelectCard,
+  onHoverCard,
+  onLeaveCard,
+}: {
+  player: PublicPlayerState;
+  isLocal: boolean;
+  selectedCardId?: string;
+  onSelectCard: (cardId: string) => void;
+  onHoverCard: (card: PublicCard, event: MouseEvent<HTMLElement>) => void;
+  onLeaveCard: () => void;
+}) {
+  const battlefield = orderedBattlefieldCards(
+    player.publicCards.filter((card) => card.zone === "battlefield"),
+  );
+  const command = orderedZoneCards(
+    player.publicCards.filter((card) => card.zone === "command"),
+    "command",
+  );
+  const graveyard = orderedZoneCards(
+    player.publicCards.filter((card) => card.zone === "graveyard"),
+    "graveyard",
+  );
+  const exile = orderedZoneCards(
+    player.publicCards.filter((card) => card.zone === "exile"),
+    "exile",
+  );
+
+  return (
+    <article className={`pod-player-board ${isLocal ? "is-local" : ""}`}>
+      <header>
+        <div>
+          <strong>{player.playerName}</strong>
+          <span>{isLocal ? "You" : `Turn ${player.turn}`}</span>
+        </div>
+        <div className="pod-trackers" aria-label={`${player.playerName} trackers`}>
+          <span>
+            Life <b>{player.life}</b>
+          </span>
+          <span>
+            Poison <b>{player.poison}</b>
+          </span>
+          <span>
+            Energy <b>{player.energy}</b>
+          </span>
+        </div>
+      </header>
+
+      <TabletopBattlefield
+        cards={battlefield}
+        cardsById={player.cardsById}
+        layout={player.battlefieldLayout}
+        selectedCardId={selectedCardId}
+        onSelectCard={onSelectCard}
+        onHoverCard={onHoverCard}
+        onLeaveCard={onLeaveCard}
+      />
+
+      <div className="pod-zone-summary">
+        <TabletopMiniZone
+          label="Command"
+          cards={command}
+          cardsById={player.cardsById}
+          selectedCardId={selectedCardId}
+          onSelectCard={onSelectCard}
+          onHoverCard={onHoverCard}
+          onLeaveCard={onLeaveCard}
+        />
+        <TabletopMiniZone
+          label="Graveyard"
+          cards={graveyard}
+          cardsById={player.cardsById}
+          selectedCardId={selectedCardId}
+          onSelectCard={onSelectCard}
+          onHoverCard={onHoverCard}
+          onLeaveCard={onLeaveCard}
+        />
+        <TabletopMiniZone
+          label="Exile"
+          cards={exile}
+          cardsById={player.cardsById}
+          selectedCardId={selectedCardId}
+          onSelectCard={onSelectCard}
+          onHoverCard={onHoverCard}
+          onLeaveCard={onLeaveCard}
+        />
+        <div className="pod-hidden-counts">
+          <span>
+            Hand <b>{player.zoneCounts.hand}</b>
+          </span>
+          <span>
+            Library <b>{player.zoneCounts.library}</b>
+          </span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function TabletopBattlefield({
+  cards,
+  cardsById,
+  layout,
+  selectedCardId,
+  onSelectCard,
+  onHoverCard,
+  onLeaveCard,
+}: {
+  cards: PublicCard[];
+  cardsById: Record<string, CardData>;
+  layout: BattlefieldLayout;
+  selectedCardId?: string;
+  onSelectCard: (cardId: string) => void;
+  onHoverCard: (card: PublicCard, event: MouseEvent<HTMLElement>) => void;
+  onLeaveCard: () => void;
+}) {
+  if (layout === "free") {
+    return (
+      <section className="pod-free-battlefield">
+        <span>
+          Free board <b>{cards.length}</b>
+        </span>
+        <div>
+          {cards.map((card) => (
+            <TabletopCardButton
+              key={card.instanceId}
+              card={card}
+              data={cardsById[card.cardId]}
+              selected={selectedCardId === card.instanceId}
+              className="pod-free-card"
+              onSelect={() => onSelectCard(card.instanceId)}
+              onHover={(event) => onHoverCard(card, event)}
+              onLeave={onLeaveCard}
+              style={{
+                left: `${card.battlefieldPosition.x}%`,
+                top: `${card.battlefieldPosition.y}%`,
+              }}
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="pod-battlefield">
+      {battlefieldLanes.map((lane) => {
+        const laneCards = orderedBattlefieldCards(
+          cards.filter((card) => card.battlefieldLane === lane.id),
+        );
+
+        return (
+          <section className={`pod-battlefield-lane lane-${lane.id}`} key={lane.id}>
+            <span>
+              {shortLaneLabel(lane.id)} <b>{laneCards.length}</b>
+            </span>
+            <div>
+              {laneCards.map((card) => (
+                <TabletopCardButton
+                  key={card.instanceId}
+                  card={card}
+                  data={cardsById[card.cardId]}
+                  selected={selectedCardId === card.instanceId}
+                  onSelect={() => onSelectCard(card.instanceId)}
+                  onHover={(event) => onHoverCard(card, event)}
+                  onLeave={onLeaveCard}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabletopMiniZone({
+  label,
+  cards,
+  cardsById,
+  selectedCardId,
+  onSelectCard,
+  onHoverCard,
+  onLeaveCard,
+}: {
+  label: string;
+  cards: PublicCard[];
+  cardsById: Record<string, CardData>;
+  selectedCardId?: string;
+  onSelectCard: (cardId: string) => void;
+  onHoverCard: (card: PublicCard, event: MouseEvent<HTMLElement>) => void;
+  onLeaveCard: () => void;
+}) {
+  const visibleCards = cards.slice(0, 6);
+
+  return (
+    <section className="pod-mini-zone">
+      <span>
+        {label} <b>{cards.length}</b>
+      </span>
+      <div>
+        {visibleCards.map((card) => (
+          <TabletopCardButton
+            key={card.instanceId}
+            card={card}
+            data={cardsById[card.cardId]}
+            selected={selectedCardId === card.instanceId}
+            onSelect={() => onSelectCard(card.instanceId)}
+            onHover={(event) => onHoverCard(card, event)}
+            onLeave={onLeaveCard}
+            compact
+          />
+        ))}
+        {cards.length > visibleCards.length && (
+          <em className="pod-more-count">+{cards.length - visibleCards.length}</em>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TabletopCardButton({
+  card,
+  data,
+  selected,
+  onSelect,
+  onHover,
+  onLeave,
+  compact = false,
+  className = "",
+  style,
+}: {
+  card: PublicCard;
+  data?: CardData;
+  selected: boolean;
+  onSelect: () => void;
+  onHover: (event: MouseEvent<HTMLElement>) => void;
+  onLeave: () => void;
+  compact?: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const imageUrl = cardDisplayImage(data, card);
+  const counters = visibleCounters(card.counters);
+
+  return (
+    <button
+      className={`pod-card ${compact ? "is-compact" : ""} ${className} ${
+        card.tapped ? "is-tapped" : ""
+      } ${selected ? "is-selected" : ""}`}
+      onClick={onSelect}
+      onMouseMove={onHover}
+      onMouseLeave={onLeave}
+      style={style}
+      title={data?.name ?? card.name}
+    >
+      {imageUrl ? (
+        <img src={imageUrl} alt={data?.name ?? card.name} loading="lazy" />
+      ) : (
+        <span>{card.faceDown ? "Face down" : card.name}</span>
+      )}
+      {counters.length > 0 && (
+        <em>
+          {counters.map(([type, value]) => `${shortCounterName(type)} ${value}`).join(" ")}
+        </em>
+      )}
+    </button>
+  );
+}
+
 function RemoteZone({
   label,
   cards,
@@ -4936,6 +5471,62 @@ function buildTokenBankForDeck(offset: number, relatedTokens: CardData[] = []) {
 
 function normalizeTokenName(name: string) {
   return name.toLowerCase().replace(/\s+token$/, "").trim();
+}
+
+function arrangeTabletopSeats(players: PublicPlayerState[]): TabletopSeatGroups {
+  const visiblePlayers = players.slice(0, 6);
+  const groups: TabletopSeatGroups = {
+    top: [],
+    bottom: [],
+    left: [],
+    right: [],
+  };
+
+  if (visiblePlayers.length === 0) {
+    return groups;
+  }
+
+  if (visiblePlayers.length === 1) {
+    groups.bottom = visiblePlayers;
+    return groups;
+  }
+
+  if (visiblePlayers.length === 2) {
+    groups.top = [visiblePlayers[1]];
+    groups.bottom = [visiblePlayers[0]];
+    return groups;
+  }
+
+  if (visiblePlayers.length === 3) {
+    groups.top = [visiblePlayers[1]];
+    groups.bottom = [visiblePlayers[0], visiblePlayers[2]];
+    return groups;
+  }
+
+  groups.top = visiblePlayers.slice(1, 3);
+  groups.bottom = [visiblePlayers[0], visiblePlayers[3]];
+
+  if (visiblePlayers[4]) {
+    groups.left = [visiblePlayers[4]];
+  }
+
+  if (visiblePlayers[5]) {
+    groups.right = [visiblePlayers[5]];
+  }
+
+  return groups;
+}
+
+function shortLaneLabel(lane: BattlefieldLane): string {
+  if (lane === "creatures") {
+    return "Creatures";
+  }
+
+  if (lane === "lands") {
+    return "Lands";
+  }
+
+  return "Engines";
 }
 
 function defaultFreePosition(index: number) {
