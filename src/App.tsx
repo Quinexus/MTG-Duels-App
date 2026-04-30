@@ -5067,6 +5067,12 @@ function TabletopPlayerBoard({
           <span>
             Energy <b>{player.energy}</b>
           </span>
+          <span>
+            Hand <b>{player.zoneCounts.hand}</b>
+          </span>
+          <span>
+            Lib <b>{player.zoneCounts.library}</b>
+          </span>
         </div>
       </header>
 
