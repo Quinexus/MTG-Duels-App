@@ -221,6 +221,7 @@ function App() {
   const [selectedPassSeatId, setSelectedPassSeatId] = useState("local-player-2");
   const [passDeviceSeatId, setPassDeviceSeatId] = useState<string>();
   const [isPrivateHidden, setIsPrivateHidden] = useState(false);
+  const [skipPassDeviceScreen, setSkipPassDeviceScreen] = useState(false);
   const [peersById, setPeersById] = useState<Record<string, PublicPlayerState>>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -289,6 +290,7 @@ function App() {
   const [isUrlLoading, setIsUrlLoading] = useState(false);
   const [draggedId, setDraggedId] = useState<string>();
   const [libraryView, setLibraryView] = useState<"hidden" | "scry" | "search">("hidden");
+  const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const [scryCount, setScryCount] = useState(0);
   const [layoutScale, setLayoutScale] = useState(1);
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isCompactViewport());
@@ -756,6 +758,7 @@ function App() {
         ],
       });
       setLibraryView("hidden");
+      setLibrarySearchQuery("");
       setScryCount(0);
       setSelectedRemote(undefined);
       setStatus(
@@ -1141,6 +1144,7 @@ function App() {
 
   function draw(count = 1) {
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
     setGame((current) => {
       const library = orderedZoneCards(
@@ -1159,6 +1163,7 @@ function App() {
 
   function mill(count = 1) {
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
     setGame((current) => {
       const library = orderedZoneCards(
@@ -1214,11 +1219,13 @@ function App() {
       setMulliganPenalty((current) => current + 1);
     }
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
   }
 
   function scry(count: number) {
     setLibraryView("scry");
+    setLibrarySearchQuery("");
     setScryCount(count);
     setGame((current) => ({
       ...current,
@@ -1235,6 +1242,7 @@ function App() {
 
   function closeLibraryReveal() {
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
     setGame((current) => ({
       ...current,
@@ -1249,6 +1257,7 @@ function App() {
 
   function shuffleLibrary() {
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
     setGame((current) => {
       const library = shuffleCards(current.instances.filter((card) => card.zone === "library")).map(
@@ -1804,6 +1813,7 @@ function App() {
 
   function resetBoardPositions() {
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
     setMulliganPenalty(0);
     setGame((current) => {
@@ -2155,20 +2165,31 @@ function App() {
     setHoverPreview(undefined);
   }
 
-  function confirmPassDevice() {
-    if (!passDeviceSeat) {
-      return;
-    }
-
-    setActivePassSeatId(passDeviceSeat.id);
-    setGame(passDeviceSeat.game);
+  function activatePassSeat(seat: LocalSeat, skippedScreen = false) {
+    setPassSeats((current) =>
+      current.map((item) =>
+        item.id === activePassSeatId ? { ...item, game: gameRef.current } : item,
+      ),
+    );
+    setActivePassSeatId(seat.id);
+    setGame(seat.game);
     setLibraryView("hidden");
+    setLibrarySearchQuery("");
     setScryCount(0);
     setSelectedRemote(undefined);
     setLimitedSelection(undefined);
     setPassDeviceSeatId(undefined);
     setIsPrivateHidden(false);
-    setStatus(`${passDeviceSeat.name} is now active.`);
+    setHoverPreview(undefined);
+    setStatus(`${seat.name} is now active${skippedScreen ? " (quick pass)." : ""}.`);
+  }
+
+  function confirmPassDevice() {
+    if (!passDeviceSeat) {
+      return;
+    }
+
+    activatePassSeat(passDeviceSeat);
   }
 
   function cancelPassDevice() {
@@ -2178,6 +2199,11 @@ function App() {
 
   function loadSelectedPassSeat() {
     if (!selectedPassSeat) {
+      return;
+    }
+
+    if (skipPassDeviceScreen) {
+      activatePassSeat(selectedPassSeat, true);
       return;
     }
 
@@ -2265,6 +2291,9 @@ function App() {
   }
 
   function toggleLibrarySearch() {
+    if (libraryView === "search") {
+      setLibrarySearchQuery("");
+    }
     setLibraryView((current) => (current === "search" ? "hidden" : "search"));
     setScryCount(0);
     setGame((current) => ({ ...current, activeZone: "library" }));
@@ -2538,9 +2567,20 @@ function App() {
                         onClick={loadSelectedPassSeat}
                         disabled={!selectedPassSeat}
                       >
-                        Pass device
+                        {skipPassDeviceScreen ? "Switch seat" : "Pass device"}
                       </button>
                     </div>
+                    <label className="pass-option-toggle">
+                      <input
+                        type="checkbox"
+                        checked={skipPassDeviceScreen}
+                        onChange={(event) => setSkipPassDeviceScreen(event.target.checked)}
+                      />
+                      <span>
+                        <strong>Quick pass</strong>
+                        <small>Skip the cover screen for solo deck testing.</small>
+                      </span>
+                    </label>
                     <div className="room-actions">
                       <button
                         type="button"
@@ -2551,7 +2591,9 @@ function App() {
                       </button>
                     </div>
                     <p className="status-line">
-                      Hide private info lets the active player share the board during their turn. Pass device fully covers the table before another seat takes over.
+                      {skipPassDeviceScreen
+                        ? "Quick pass switches seats immediately. Use Hide private info when sharing the screen."
+                        : "Hide private info lets the active player share the board during their turn. Pass device fully covers the table before another seat takes over."}
                     </p>
                   </div>
                 ) : (
@@ -3022,7 +3064,15 @@ function App() {
                 ))}
               </select>
               <button type="button" onClick={loadSelectedPassSeat} disabled={!selectedPassSeat}>
-                Pass device
+                {skipPassDeviceScreen ? "Switch seat" : "Pass device"}
+              </button>
+              <button
+                type="button"
+                className={skipPassDeviceScreen ? "is-active" : ""}
+                onClick={() => setSkipPassDeviceScreen((current) => !current)}
+                title="Skip the pass-device cover screen"
+              >
+                Quick pass
               </button>
             </div>
           )}
@@ -3122,6 +3172,7 @@ function App() {
                 selectedCard={selected}
                 selectedData={selectedData}
                 libraryView={libraryView}
+                librarySearchQuery={librarySearchQuery}
                 scryCount={scryCount}
                 hidePrivate={isPrivateHidden}
                 cardScale={Math.min(cardScale, 1)}
@@ -3129,8 +3180,10 @@ function App() {
                 onUntapAll={untapAllBattlefield}
                 onShuffle={shuffleLibrary}
                 onToggleLibrarySearch={toggleLibrarySearch}
+                onLibrarySearchQueryChange={setLibrarySearchQuery}
                 onCloseLibraryReveal={closeLibraryReveal}
                 onMoveSelected={moveSelected}
+                onMoveCardToZone={(cardId, zone) => moveCard(cardId, zone)}
                 onToggleSelectedTapped={() => selected && toggleTapped(selected.instanceId)}
                 onSetActiveZone={(zone) => setGame((current) => ({ ...current, activeZone: zone }))}
                 onHoverCard={(card, event) => showCardPreview(card, game.cardsById[card.cardId], event)}
@@ -3349,12 +3402,15 @@ function App() {
                   cardsById={game.cardsById}
                   selectedId={selected?.instanceId}
                   libraryView={libraryView}
+                  librarySearchQuery={librarySearchQuery}
                   scryCount={scryCount}
                   hidePrivate={isPrivateHidden}
                   cardScale={cardScale}
                   onHoverCard={(card, event) => showCardPreview(card, game.cardsById[card.cardId], event)}
                   onLeaveCard={() => setHoverPreview(undefined)}
                   onSelect={(card) => selectOrReorderCard(card, zone.id)}
+                  onLibrarySearchQueryChange={setLibrarySearchQuery}
+                  onMoveCardToZone={(cardId, nextZone) => moveCard(cardId, nextZone)}
                   onDropBeforeCard={(event, targetId) =>
                     onDropBeforeCard(event, zone.id, targetId)
                   }
@@ -4214,12 +4270,15 @@ function ZoneStack({
   cardsById,
   selectedId,
   libraryView,
+  librarySearchQuery,
   scryCount,
   hidePrivate,
   cardScale,
   onHoverCard,
   onLeaveCard,
   onSelect,
+  onLibrarySearchQueryChange,
+  onMoveCardToZone,
   onDropBeforeCard,
   onDragStart,
 }: {
@@ -4228,12 +4287,15 @@ function ZoneStack({
   cardsById: Record<string, CardData>;
   selectedId?: string;
   libraryView: "hidden" | "scry" | "search";
+  librarySearchQuery: string;
   scryCount: number;
   hidePrivate: boolean;
   cardScale: number;
   onHoverCard: (card: CardInstance, event: MouseEvent<HTMLElement>) => void;
   onLeaveCard: () => void;
   onSelect: (card: CardInstance, lane?: BattlefieldLane) => void;
+  onLibrarySearchQueryChange: (query: string) => void;
+  onMoveCardToZone: (cardId: string, zone: ZoneId) => void;
   onDropBeforeCard: (event: DragEvent<HTMLButtonElement>, targetId: string) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, card: CardInstance) => void;
 }) {
@@ -4255,28 +4317,91 @@ function ZoneStack({
     );
   }
 
+  const isLibrarySearch = zoneId === "library" && libraryView === "search";
+  const librarySearchTerms = getLibrarySearchTerms(librarySearchQuery);
   const visibleCards =
-    zoneId === "library" && libraryView === "scry" ? cards.slice(0, scryCount) : cards;
+    zoneId === "library" && libraryView === "scry"
+      ? cards.slice(0, scryCount)
+      : zoneId === "library" &&
+          libraryView === "search" &&
+          librarySearchTerms.length > 0
+        ? cards.filter((card) =>
+            cardMatchesLibrarySearch(card, cardsById[card.cardId], librarySearchTerms),
+          )
+        : cards;
 
   return (
-    <div className="zone-stack">
-      {visibleCards.map((card, index) => (
-        <CardTile
-          key={card.instanceId}
-          card={card}
-          data={cardsById[card.cardId]}
-          isSelected={card.instanceId === selectedId}
-          compact={zoneId === "library"}
-          indexLabel={zoneId === "library" ? index + 1 : undefined}
-          cardScale={cardScale}
-          onHover={(event) => onHoverCard(card, event)}
-          onLeave={onLeaveCard}
-          onSelect={() => onSelect(card)}
-          onDropBefore={(event) => onDropBeforeCard(event, card.instanceId)}
-          onDragStart={(event) => onDragStart(event, card)}
-        />
-      ))}
-    </div>
+    <>
+      {isLibrarySearch && (
+        <div className="library-search-panel" onClick={(event) => event.stopPropagation()}>
+          <label htmlFor="library-search-input">Search library</label>
+          <div>
+            <input
+              id="library-search-input"
+              type="search"
+              value={librarySearchQuery}
+              onChange={(event) => onLibrarySearchQueryChange(event.target.value)}
+              placeholder="Card name, type, rules text..."
+              autoFocus
+            />
+            {librarySearchQuery && (
+              <button type="button" onClick={() => onLibrarySearchQueryChange("")}>
+                Clear
+              </button>
+            )}
+          </div>
+          <small>
+            {visibleCards.length} of {cards.length} cards
+          </small>
+        </div>
+      )}
+      <div className={`zone-stack ${isLibrarySearch ? "is-library-search" : ""}`}>
+        {visibleCards.map((card, index) => {
+          const libraryIndex =
+            zoneId === "library"
+              ? cards.findIndex((item) => item.instanceId === card.instanceId) + 1
+              : undefined;
+          const tile = (
+            <CardTile
+              key={card.instanceId}
+              card={card}
+              data={cardsById[card.cardId]}
+              isSelected={card.instanceId === selectedId}
+              compact={zoneId === "library"}
+              indexLabel={zoneId === "library" ? libraryIndex || index + 1 : undefined}
+              cardScale={cardScale}
+              onHover={(event) => onHoverCard(card, event)}
+              onLeave={onLeaveCard}
+              onSelect={() => onSelect(card)}
+              onDropBefore={(event) => onDropBeforeCard(event, card.instanceId)}
+              onDragStart={(event) => onDragStart(event, card)}
+            />
+          );
+
+          if (!isLibrarySearch) {
+            return tile;
+          }
+
+          return (
+            <div className="library-search-result" key={card.instanceId}>
+              {tile}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMoveCardToZone(card.instanceId, "hand");
+                }}
+              >
+                To hand
+              </button>
+            </div>
+          );
+        })}
+        {isLibrarySearch && visibleCards.length === 0 && (
+          <p className="library-search-empty">No matching cards.</p>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -4659,6 +4784,7 @@ function LocalTabletopPlayerBoard({
   selectedCard,
   selectedData,
   libraryView,
+  librarySearchQuery,
   scryCount,
   hidePrivate,
   cardScale,
@@ -4666,8 +4792,10 @@ function LocalTabletopPlayerBoard({
   onUntapAll,
   onShuffle,
   onToggleLibrarySearch,
+  onLibrarySearchQueryChange,
   onCloseLibraryReveal,
   onMoveSelected,
+  onMoveCardToZone,
   onToggleSelectedTapped,
   onSetActiveZone,
   onHoverCard,
@@ -4688,6 +4816,7 @@ function LocalTabletopPlayerBoard({
   selectedCard?: CardInstance;
   selectedData?: CardData;
   libraryView: "hidden" | "scry" | "search";
+  librarySearchQuery: string;
   scryCount: number;
   hidePrivate: boolean;
   cardScale: number;
@@ -4695,8 +4824,10 @@ function LocalTabletopPlayerBoard({
   onUntapAll: () => void;
   onShuffle: () => void;
   onToggleLibrarySearch: () => void;
+  onLibrarySearchQueryChange: (query: string) => void;
   onCloseLibraryReveal: () => void;
   onMoveSelected: (zone: ZoneId, lane?: BattlefieldLane) => void;
+  onMoveCardToZone: (cardId: string, zone: ZoneId) => void;
   onToggleSelectedTapped: () => void;
   onSetActiveZone: (zone: ZoneId) => void;
   onHoverCard: (card: CardInstance, event: MouseEvent<HTMLElement>) => void;
@@ -4786,11 +4917,14 @@ function LocalTabletopPlayerBoard({
               selectedId={selectedCard?.instanceId}
               active={game.activeZone === zone.id}
               libraryView={libraryView}
+              librarySearchQuery={librarySearchQuery}
               scryCount={scryCount}
               hidePrivate={hidePrivate}
               cardScale={cardScale}
               onSetActiveZone={onSetActiveZone}
               onMoveSelected={onTapZone}
+              onLibrarySearchQueryChange={onLibrarySearchQueryChange}
+              onMoveCardToZone={onMoveCardToZone}
               onHoverCard={onHoverCard}
               onLeaveCard={onLeaveCard}
               onDrop={onDrop}
@@ -4843,11 +4977,14 @@ function LocalTabletopZone({
   selectedId,
   active,
   libraryView,
+  librarySearchQuery,
   scryCount,
   hidePrivate,
   cardScale,
   onSetActiveZone,
   onMoveSelected,
+  onLibrarySearchQueryChange,
+  onMoveCardToZone,
   onHoverCard,
   onLeaveCard,
   onDrop,
@@ -4860,11 +4997,14 @@ function LocalTabletopZone({
   selectedId?: string;
   active: boolean;
   libraryView: "hidden" | "scry" | "search";
+  librarySearchQuery: string;
   scryCount: number;
   hidePrivate: boolean;
   cardScale: number;
   onSetActiveZone: (zone: ZoneId) => void;
   onMoveSelected: (zone: ZoneId) => void;
+  onLibrarySearchQueryChange: (query: string) => void;
+  onMoveCardToZone: (cardId: string, zone: ZoneId) => void;
   onHoverCard: (card: CardInstance, event: MouseEvent<HTMLElement>) => void;
   onLeaveCard: () => void;
   onDrop: (event: DragEvent<HTMLElement>, zone: ZoneId, lane?: BattlefieldLane) => void;
@@ -4900,12 +5040,15 @@ function LocalTabletopZone({
         cardsById={cardsById}
         selectedId={selectedId}
         libraryView={libraryView}
+        librarySearchQuery={librarySearchQuery}
         scryCount={scryCount}
         hidePrivate={hidePrivate}
         cardScale={cardScale}
         onHoverCard={onHoverCard}
         onLeaveCard={onLeaveCard}
         onSelect={(card) => onSelectCard(card, zone.id)}
+        onLibrarySearchQueryChange={onLibrarySearchQueryChange}
+        onMoveCardToZone={onMoveCardToZone}
         onDropBeforeCard={(event, targetId) => onDropBeforeCard(event, zone.id, targetId)}
         onDragStart={onDragStart}
       />
@@ -5655,6 +5798,38 @@ function createZoneCounts(cards: CardInstance[]): Record<ZoneId, number> {
     counts[card.zone] += 1;
   });
   return counts;
+}
+
+function getLibrarySearchTerms(query: string) {
+  return query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function cardMatchesLibrarySearch(
+  card: CardInstance,
+  data: CardData | undefined,
+  terms: string[],
+) {
+  if (terms.length === 0) {
+    return true;
+  }
+
+  const searchText = [
+    card.name,
+    data?.name,
+    data?.typeLine,
+    data?.oracleText,
+    data?.manaCost,
+    data?.setCode,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return terms.every((term) => searchText.includes(term));
 }
 
 function cardDisplayImage(
