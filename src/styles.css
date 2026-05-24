@@ -9,6 +9,11 @@
   -webkit-font-smoothing: antialiased;
 }
 
+html {
+  min-height: 100%;
+  background: #10110f;
+}
+
 .app-shell {
   --zone-scale: 1;
 }
@@ -22,9 +27,16 @@ body {
   min-width: 320px;
   min-height: 100vh;
   min-height: 100svh;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: rgba(124, 227, 177, 0.18);
+  -webkit-text-size-adjust: 100%;
   background:
     radial-gradient(circle at 52% 42%, rgba(42, 113, 86, 0.22), transparent 42%),
     linear-gradient(135deg, #11130f 0%, #171817 50%, #0b0d0c 100%);
+}
+
+#root {
+  min-height: 100svh;
 }
 
 button,
@@ -3469,8 +3481,13 @@ select:focus {
 
   .tabletop {
     height: 100svh;
-    padding: 10px 10px calc(72px + env(safe-area-inset-bottom));
+    padding:
+      calc(10px + env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      calc(72px + max(8px, env(safe-area-inset-bottom)))
+      max(10px, env(safe-area-inset-left));
     overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .table-header {
@@ -3812,7 +3829,11 @@ select:focus {
 
 @media (max-width: 860px) and (orientation: landscape) {
   .tabletop {
-    padding: 8px 10px calc(62px + env(safe-area-inset-bottom));
+    padding:
+      calc(8px + env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      calc(62px + max(8px, env(safe-area-inset-bottom)))
+      max(10px, env(safe-area-inset-left));
   }
 
   .table-header {

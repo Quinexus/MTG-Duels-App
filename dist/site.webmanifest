@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "MTG Duels Sandbox",
+  "short_name": "MTG Duels",
+  "description": "A browser tabletop sandbox for MTG duels, deck testing, Limited pools, and multiplayer rooms.",
+  "start_url": "/?source=homescreen",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#10110f",
+  "theme_color": "#10110f",
+  "orientation": "any",
+  "categories": ["games", "entertainment", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
